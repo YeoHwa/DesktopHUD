@@ -2,7 +2,8 @@
 
 배포 폴더 구조:
     DesktopHUD-x.y.z\\
-        설치.cmd            ← 더블클릭 → 로고가 들어간 설치 창이 열림
+        Desktop HUD 설치.exe ← 더블클릭 → 로고가 들어간 설치 창 (서명된 pythonw.exe 의 이름만 바꾼 것,
+        Desktop HUD 설치._pth   ._pth + app\\setup_boot\\sitecustomize.py 가 이 파일을 실행)
         runtime\\           ← 서명된 공식 Python (python.org)
         app\\               ← main.py, installer.py, hud\\, web\\
 설치 위치: %LOCALAPPDATA%\\Programs\\DesktopHUD
@@ -22,7 +23,7 @@ from pathlib import Path
 
 APP_NAME = "Desktop HUD"
 APP_ID = "DesktopHUD"
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 HERE = Path(__file__).resolve().parent                       # app 폴더
 SRC_ROOT = HERE.parent                                       # 배포 폴더 (runtime, app 이 들어 있는 곳)
 DEST = Path(os.environ["LOCALAPPDATA"]) / "Programs" / APP_ID
@@ -82,6 +83,16 @@ def dir_size_kb(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) // 1024
 
 
+def unblock_tree(root: Path):
+    """'인터넷에서 받은 파일' 표시(Zone.Identifier) 제거. 이 표시가 있으면 .NET 라이브러리가 안 불려서 HUD 가 안 켜진다."""
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            try:
+                os.remove(os.path.join(dirpath, f) + ":Zone.Identifier")
+            except OSError:
+                pass
+
+
 def refresh_icons():
     """바로가기 아이콘 캐시 새로고침 (새 로고가 바로 보이도록)."""
     try:
@@ -99,6 +110,8 @@ def do_install(autostart=True, desktop_shortcut=True, run_after=True, report=lam
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
         shutil.copytree(SRC_ROOT / sub, target)
+    report("파일 차단 해제 중…")
+    unblock_tree(DEST)
 
     report("바로가기 만드는 중…")
     pyw = DEST / "runtime" / "pythonw.exe"
@@ -377,6 +390,8 @@ def fallback(mode: str):
 
 if __name__ == "__main__":
     sys.path.insert(0, str(HERE))
+    if (SRC_ROOT / "runtime").is_dir():
+        unblock_tree(SRC_ROOT)      # 예전 방식(직접 실행)으로 켜졌을 때도 .NET 이 불리도록
     mode = "uninstall" if "--uninstall" in sys.argv else "install"
     if mode == "install" and SRC_ROOT.resolve() == DEST.resolve():
         msg("이미 설치된 위치에서 실행 중이에요.")

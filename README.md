@@ -26,7 +26,9 @@ Windows 바탕화면에 깔리는, PC방 런처 같은 HUD입니다.
 ## 설치 (사용자)
 
 1. [Releases](../../releases) 에서 `DesktopHUD-x.y.z.zip` 을 받아 압축을 풉니다.
-2. `설치.cmd` 를 더블클릭합니다. ("Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**)
+2. **`Desktop HUD 설치.exe`** 를 더블클릭하면 설치 창이 열려요.
+   - 파이썬 모양 아이콘이지만 정상이에요. python.org 가 서명한 실행 파일을 이름만 바꾼 것이라 Windows **스마트 앱 컨트롤**에도 막히지 않아요.
+   - 함께 있는 `python*.dll`, `vcruntime*.dll`, `._pth` 파일은 설치에 필요하니 지우지 마세요.
 3. 설치가 끝나면 HUD가 바로 켜지고, 다음부터는 로그인할 때 자동으로 켜집니다.
 
 - 관리자 권한 없이 현재 사용자에게만 설치됩니다 (`%LOCALAPPDATA%\Programs\DesktopHUD`).
@@ -57,6 +59,11 @@ uv run python main.py --debug --panel=game --theme=dark   # 개발자 도구 + �
 exe 로 묶지 않는 이유: Windows 11 **스마트 앱 컨트롤**이 서명되지 않은 새 exe(PyInstaller 결과물, 설치 exe 등)를 막습니다.
 그래서 배포 파일은 python.org 의 **서명된 공식 Python 런타임** + PyPI 라이브러리 + 이 저장소의 코드로만 구성되고,
 설치/제거는 `installer.py` 가 합니다. 빌드에는 python.org 에서 설치한 Python 3.12 가 필요해요.
+
+- 설치 실행 파일 `Desktop HUD 설치.exe` 는 서명된 `pythonw.exe` 를 이름만 바꾼 것이고, 같은 이름의 `._pth` 파일과
+  `setup_boot/sitecustomize.py` 가 실행 시 설치 창을 엽니다. (`.cmd` 같은 스크립트는 인터넷에서 받으면 스마트 앱 컨트롤이 막음)
+- 인터넷에서 받은 압축을 풀면 모든 파일에 'Zone.Identifier'(인터넷 영역) 표시가 붙는데, .NET Framework 는 이 표시가 있는
+  .NET 라이브러리를 불러오지 않습니다. 그래서 설치 시작 시, 설치 후, HUD 시작 시 이 표시를 지웁니다.
 
 ### 구조
 

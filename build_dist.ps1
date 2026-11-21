@@ -1,5 +1,5 @@
 ﻿# Desktop HUD 배포 파일 만들기
-#   결과: dist\DesktopHUD-<버전>.zip  (압축을 풀고 '설치.cmd' 더블클릭)
+#   결과: dist\DesktopHUD-<버전>.zip  (압축을 풀고 'Desktop HUD 설치.exe' 더블클릭)
 #
 # 새 exe 를 만들지 않는 이유: Windows 11 '스마트 앱 컨트롤'이 서명 안 된 새 exe/설치 파일을 막기 때문.
 # 대신 python.org 의 서명된 Python 과 PyPI 공식 라이브러리 파일만 사용한다.
@@ -43,17 +43,18 @@ Copy-Item "$root\main.py", "$root\installer.py" "$out\app"
 robocopy "$root\hud" "$out\app\hud" *.py /NFL /NDL /NJH /NJS | Out-Null
 robocopy "$root\web" "$out\app\web" /E /NFL /NDL /NJH /NJS | Out-Null
 
-$cmd = @'
-@echo off
-cd /d "%~dp0"
-if not exist "%~dp0runtime\pythonw.exe" (
-  echo 압축을 먼저 풀어 주세요. ^(zip 안에서 바로 실행하면 설치할 수 없어요^)
-  pause
-  exit /b 1
-)
-start "" "%~dp0runtime\pythonw.exe" "%~dp0app\installer.py"
-'@
-[IO.File]::WriteAllText("$out\설치.cmd", "chcp 65001 >nul`r`n" + ($cmd -replace "`r?`n", "`r`n"), (New-Object Text.UTF8Encoding $false))
+# 설치 실행 파일: .cmd 는 인터넷에서 받으면 스마트 앱 컨트롤이 막으므로("Dangerous file extension from the web"),
+# python.org 가 서명한 pythonw.exe 를 이름만 바꿔 맨 위에 둔다. (이름을 바꿔도 디지털 서명은 그대로 유효)
+# 같은 이름의 ._pth 파일이 runtime 과 app\setup_boot 를 경로로 잡고, setup_boot\sitecustomize.py 가 설치 창을 연다.
+$setupName = 'Desktop HUD 설치'
+robocopy "$root\setup_boot" "$out\app\setup_boot" *.py /NFL /NDL /NJH /NJS | Out-Null
+Copy-Item "$out\runtime\pythonw.exe" "$out\$setupName.exe"
+foreach ($dll in 'python3.dll', 'python312.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {   # exe 옆에 있어야 실행됨
+    if (Test-Path "$out\runtime\$dll") { Copy-Item "$out\runtime\$dll" "$out\$dll" }
+}
+$pth = "runtime\Lib`r`nruntime\DLLs`r`nruntime\Lib\site-packages`r`napp\setup_boot`r`nimport site`r`n"
+[IO.File]::WriteAllText("$out\$setupName._pth", $pth, (New-Object Text.UTF8Encoding $false))
+if ((Get-AuthenticodeSignature "$out\$setupName.exe").Status -ne 'Valid') { throw "설치 실행 파일의 서명이 유효하지 않습니다" }
 
 $readme = @"
 Desktop HUD $ver
@@ -63,8 +64,10 @@ Desktop HUD $ver
 
 설치
   1. 이 zip 파일의 압축을 풉니다.
-  2. '설치.cmd'를 더블클릭합니다.
-     (Windows 보호 창이 뜨면 '추가 정보' → '실행')
+  2. 'Desktop HUD 설치.exe' 를 더블클릭하면 설치 창이 열립니다.
+     (파이썬 모양 아이콘이지만 정상이에요. python.org 가 서명한 실행 파일을 이름만 바꾼 것이라
+      Windows 스마트 앱 컨트롤에도 막히지 않아요.)
+     함께 들어 있는 python*.dll, vcruntime*.dll, ._pth 파일은 설치 실행에 필요하니 지우지 마세요.
   3. 설치가 끝나면 HUD가 바로 켜지고, 다음부터는 컴퓨터를 켤 때 자동으로 켜집니다.
   관리자 권한은 필요 없고, 현재 사용자에게만 설치됩니다.
   설치 위치: %LOCALAPPDATA%\Programs\DesktopHUD

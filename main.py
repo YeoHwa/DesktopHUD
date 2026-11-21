@@ -29,6 +29,21 @@ sys.excepthook = _excepthook
 threading.excepthook = lambda a: _excepthook(a.exc_type, a.exc_value, a.exc_traceback)
 log.info("시작 시도 v%s (exe=%s)", VERSION, sys.executable)
 
+def _unblock_install():
+    """설치 폴더 파일의 '인터넷에서 받은 파일' 표시 제거 — 남아 있으면 .NET(pythonnet) 이 안 불려서 HUD 가 안 켜진다."""
+    root = APP_DIR.parent
+    if not (root / "runtime").is_dir():
+        return
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            try:
+                os.remove(os.path.join(dirpath, f) + ":Zone.Identifier")
+            except OSError:
+                pass
+
+
+_unblock_install()
+
 import webview  # noqa: E402
 
 from hud import audio, desktop, games, icons, media, players, quick, system  # noqa: E402
