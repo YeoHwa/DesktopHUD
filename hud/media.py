@@ -1,123 +1,126 @@
-"""지금 재생 중인 곡 정보와 조작 (Windows 미디어 제어 = SMTC), PC 전체 음량."""
-import asyncio
-import datetime as dt
+"""지금 재생 중인 곡 정보와 조작 (Windows 미디어 제어 = SMTC), PC 전체 음량.
+
+SMTC 는 .NET Framework(pythonnet) 으로 호출한다 (hud/winrt_net.py 참고).
+"""
 import logging
 import threading
+import time
 
 from .icons import bytes_to_data_url
 
 log = logging.getLogger("hud")
-
-try:
-    from winrt.windows.media.control import (
-        GlobalSystemMediaTransportControlsSessionManager as Manager,
-        GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
-    )
-    from winrt.windows.storage.streams import Buffer, InputStreamOptions
-except Exception:  # pragma: no cover
-    Manager = None
-    log.exception("winrt 미디어 모듈을 불러오지 못했습니다")
+PLAYING = 4   # GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing
 
 
 class Media:
     def __init__(self, prefer: str):
-        self.prefer = prefer.lower()
-        self.loop = asyncio.new_event_loop()
+        self.prefer = (prefer or "").lower()
         self._mgr = None
+        self._types = None
+        self._lock = threading.Lock()
         self._thumb_key = None
         self._thumb = ""
-        threading.Thread(target=self.loop.run_forever, daemon=True, name="media").start()
 
     def set_prefer(self, match: str):
         """설정에서 플레이어를 바꿨을 때."""
         self.prefer = (match or "").lower()
         self._thumb_key = None
 
-    def _call(self, coro, timeout=4):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
-
-    async def _session(self):
-        if Manager is None:
-            return None
+    def _manager(self):
+        from . import winrt_net
+        if self._types is None:
+            ns = "Windows.Media.Control.GlobalSystemMediaTransportControlsSession"
+            self._types = {
+                "mgr": winrt_net.winrt_type(ns + "Manager", "Windows.Media.Control"),
+                "props": winrt_net.winrt_type(ns + "MediaProperties", "Windows.Media.Control"),
+            }
         if self._mgr is None:
-            self._mgr = await Manager.request_async()
-        sessions = list(self._mgr.get_sessions())
+            req = self._types["mgr"].GetMethod("RequestAsync").Invoke(None, None)
+            self._mgr = winrt_net.wait(req, self._types["mgr"])
+        return self._mgr
+
+    def _session(self):
+        mgr = self._manager()
+        sessions = list(mgr.GetSessions())
         if not sessions:
             return None
-        preferred = [s for s in sessions if self.prefer and self.prefer in (s.source_app_user_model_id or "").lower()]
-        if preferred:
-            return preferred[0]
-        playing = [s for s in sessions if s.get_playback_info().playback_status == Status.PLAYING]
-        return playing[0] if playing else (self._mgr.get_current_session() or sessions[0])
+        if self.prefer:
+            for s in sessions:
+                if self.prefer in (s.SourceAppUserModelId or "").lower():
+                    return s
+        for s in sessions:
+            if int(s.GetPlaybackInfo().PlaybackStatus) == PLAYING:
+                return s
+        return mgr.GetCurrentSession() or sessions[0]
 
-    async def _info(self):
-        s = await self._session()
-        if s is None:
-            return {"ok": False}
-        props = await s.try_get_media_properties_async()
-        pb = s.get_playback_info()
-        tl = s.get_timeline_properties()
-        playing = pb.playback_status == Status.PLAYING
-        pos = tl.position.total_seconds()
-        end = tl.end_time.total_seconds()
-        if playing and tl.last_updated_time:
-            pos += max(0.0, (dt.datetime.now(dt.timezone.utc) - tl.last_updated_time).total_seconds())
-        key = (props.title, props.artist)
-        if key != self._thumb_key:
-            self._thumb_key, self._thumb = key, ""
-            if props.thumbnail:
-                try:
-                    stream = await props.thumbnail.open_read_async()
-                    buf = Buffer(stream.size)
-                    await stream.read_async(buf, stream.size, InputStreamOptions.READ_AHEAD)
-                    self._thumb = bytes_to_data_url(bytes(buf))
-                except Exception as e:
-                    log.debug("앨범 이미지 실패: %s", e)
-        app = s.source_app_user_model_id or ""
-        return {
-            "ok": True,
-            "title": props.title or "",
-            "artist": props.artist or "",
-            "album": props.album_title or "",
-            "playing": playing,
-            "position": min(pos, end) if end else pos,
-            "duration": end,
-            "thumb": self._thumb,
-            "isPreferred": bool(self.prefer) and self.prefer in app.lower(),
-        }
+    @staticmethod
+    def _position(s):
+        tl = s.GetTimelineProperties()
+        pos, end = tl.Position.TotalSeconds, tl.EndTime.TotalSeconds
+        if int(s.GetPlaybackInfo().PlaybackStatus) == PLAYING:
+            from System import DateTimeOffset
+            pos += max(0.0, (DateTimeOffset.Now - tl.LastUpdatedTime).TotalSeconds)
+        return pos, end
 
     def info(self):
+        from . import winrt_net
         try:
-            return self._call(self._info())
+            with self._lock:
+                s = self._session()
+                if s is None:
+                    return {"ok": False}
+                props = winrt_net.wait(s.TryGetMediaPropertiesAsync(), self._types["props"])
+                playing = int(s.GetPlaybackInfo().PlaybackStatus) == PLAYING
+                pos, end = self._position(s)
+                title, artist = props.Title or "", props.Artist or ""
+                if (title, artist) != self._thumb_key:
+                    self._thumb_key, self._thumb = (title, artist), ""
+                    if props.Thumbnail is not None:
+                        try:
+                            self._thumb = bytes_to_data_url(winrt_net.read_stream_ref(props.Thumbnail))
+                        except Exception as e:
+                            log.debug("앨범 이미지 실패: %s", e)
+                app = s.SourceAppUserModelId or ""
+                return {
+                    "ok": True, "title": title, "artist": artist, "album": props.AlbumTitle or "",
+                    "playing": playing, "position": min(pos, end) if end > 0 else pos, "duration": end,
+                    "thumb": self._thumb, "isPreferred": bool(self.prefer) and self.prefer in app.lower(),
+                }
         except Exception as e:
             log.debug("미디어 정보 실패: %s", e)
             self._mgr = None
             return {"ok": False}
 
     def control(self, action: str, seconds: float = 10):
-        async def run():
-            s = await self._session()
-            if s is None:
-                return False
-            if action == "toggle":
-                return await s.try_toggle_play_pause_async()
-            if action == "next":
-                return await s.try_skip_next_async()
-            if action == "prev":
-                return await s.try_skip_previous_async()
-            if action in ("forward", "rewind"):
-                tl = s.get_timeline_properties()
-                cur = tl.position.total_seconds()
-                if s.get_playback_info().playback_status == Status.PLAYING and tl.last_updated_time:
-                    cur += (dt.datetime.now(dt.timezone.utc) - tl.last_updated_time).total_seconds()
-                target = max(0.0, cur + (seconds if action == "forward" else -seconds))
-                return await s.try_change_playback_position_async(int(target * 10_000_000))
-            return False
+        from . import winrt_net
+        from System import Boolean
         try:
-            return bool(self._call(run()))
+            with self._lock:
+                s = self._session()
+                if s is None:
+                    return False
+                if action == "toggle":
+                    op = s.TryTogglePlayPauseAsync()
+                elif action == "next":
+                    op = s.TrySkipNextAsync()
+                elif action == "prev":
+                    op = s.TrySkipPreviousAsync()
+                elif action in ("forward", "rewind"):
+                    pos, _ = self._position(s)
+                    target = max(0.0, pos + (seconds if action == "forward" else -seconds))
+                    op = s.TryChangePlaybackPositionAsync(int(target * 10_000_000))
+                else:
+                    return False
+                return bool(winrt_net.wait(op, clr_type(Boolean)))
         except Exception:
             log.exception("미디어 조작 실패: %s", action)
+            self._mgr = None
             return False
+
+
+def clr_type(py_type):
+    import clr
+    return clr.GetClrType(py_type)
 
 
 # ---------------- PC 전체 음량 (pycaw) ----------------

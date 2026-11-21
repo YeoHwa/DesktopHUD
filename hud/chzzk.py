@@ -37,16 +37,23 @@ def register_aumid():
 
 def toast(title: str, body: str, url: str, image: str = "", attribution: str = ""):
     try:
-        from winrt.windows.data.xml.dom import XmlDocument
-        from winrt.windows.ui.notifications import ToastNotification, ToastNotificationManager
         img = f'<image placement="appLogoOverride" hint-crop="circle" src="{escape(image)}"/>' if image else ""
         attr = f'<text placement="attribution">{escape(attribution)}</text>' if attribution else ""
         xml = (f'<toast activationType="protocol" launch="{escape(url)}"><visual><binding template="ToastGeneric">'
                f'<text>{escape(title)}</text><text>{escape(body)}</text>{attr}{img}</binding></visual>'
                f'<actions><action content="시청하기" activationType="protocol" arguments="{escape(url)}"/></actions></toast>')
-        doc = XmlDocument()
-        doc.load_xml(xml)
-        ToastNotificationManager.create_toast_notifier_with_id(AUMID).show(ToastNotification(doc))
+        # .NET(pythonnet) 으로 Windows 알림 API 호출 (hud/winrt_net.py 참고)
+        import clr
+        from System import Activator, Array, Object, String, Type
+        from . import winrt_net
+        Xml = winrt_net.winrt_type("Windows.Data.Xml.Dom.XmlDocument", "Windows.Data.Xml.Dom")
+        Mgr = winrt_net.winrt_type("Windows.UI.Notifications.ToastNotificationManager", "Windows.UI.Notifications")
+        Toast = winrt_net.winrt_type("Windows.UI.Notifications.ToastNotification", "Windows.UI.Notifications")
+        doc = Activator.CreateInstance(Xml)
+        doc.LoadXml(xml)
+        create = Mgr.GetMethod("CreateToastNotifier", Array[Type]([clr.GetClrType(String)]))
+        notifier = create.Invoke(None, Array[Object]([AUMID]))
+        notifier.Show(Activator.CreateInstance(Toast, Array[Object]([doc])))
         return True
     except Exception:
         log.exception("알림 표시 실패")

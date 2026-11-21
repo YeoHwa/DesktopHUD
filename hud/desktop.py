@@ -96,14 +96,76 @@ def fit_height(x: int, y: int, minimum: int = 760) -> int:
     return max(minimum, work.bottom - int(y) - margin)
 
 
+MONITORENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT),
+                                     wintypes.LPARAM)
+user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.c_void_p, MONITORENUMPROC, wintypes.LPARAM]
+user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+user32.GetDpiForWindow.argtypes = [wintypes.HWND]
+
+
+def monitors() -> list[dict]:
+    """모니터 목록 (주 모니터 먼저, 그다음 왼쪽부터). 좌표는 작업 표시줄을 뺀 작업 영역."""
+    found = []
+
+    def cb(hmon, hdc, rect, lparam):
+        info = MONITORINFO(ctypes.sizeof(MONITORINFO))
+        if user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+            w, m = info.rcWork, info.rcMonitor
+            found.append({"left": w.left, "top": w.top, "right": w.right, "bottom": w.bottom,
+                          "width": m.right - m.left, "height": m.bottom - m.top, "primary": bool(info.dwFlags & 1)})
+        return True
+
+    user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(cb), 0)
+    found.sort(key=lambda m: (not m["primary"], m["left"]))
+    for i, m in enumerate(found):
+        m["index"] = i
+        m["name"] = f"모니터 {i + 1}{' (주 모니터)' if m['primary'] else ''} · {m['width']}×{m['height']}"
+    return found
+
+
+def monitor_at(x: int, y: int) -> dict:
+    mons = monitors()
+    for m in mons:
+        if m["left"] <= x < m["right"] and m["top"] <= y < m["bottom"]:
+            return m
+    return min(mons, key=lambda m: abs((m["left"] + m["right"]) / 2 - x) + abs((m["top"] + m["bottom"]) / 2 - y))
+
+
 def hwnd_of(window):
     return wintypes.HWND(window.native.Handle.ToInt64())
+
+
+def dpi_scale(window) -> float:
+    """화면 배율(125%, 150% 등). DPI 를 모르는 창이면 1.0."""
+    try:
+        return max(1.0, user32.GetDpiForWindow(hwnd_of(window)) / 96)
+    except Exception:
+        return 1.0
 
 
 def set_size(window, width: int, height: int):
     """창 크기를 픽셀 그대로 지정 (pywebview 는 테두리 두께만큼 빼서 만들기 때문)."""
     user32.SetWindowPos(hwnd_of(window), None, 0, 0, width, height,
                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE)
+
+
+def set_bounds(window, x: int, y: int, width: int, height: int):
+    """위치와 크기를 한 번에 (Z 순서는 바탕화면 층 그대로)."""
+    user32.SetWindowPos(hwnd_of(window), None, int(x), int(y), int(width), int(height), SWP_NOZORDER | SWP_NOACTIVATE)
+
+
+def set_zoom(window, zoom: float):
+    """HUD 전체 크기 배율 (WebView2 확대/축소)."""
+    from System import Action
+    form = window.native
+
+    def apply():
+        try:
+            form.webview.ZoomFactor = float(zoom)
+        except Exception as e:
+            log.warning("확대 배율 설정 실패: %s", e)
+
+    form.Invoke(Action(apply))
 
 
 def pin_to_desktop(window, width: int | None = None, height: int | None = None):

@@ -8,6 +8,7 @@ import logging.handlers
 import os
 import sys
 import threading
+import time
 import traceback
 
 from hud.config import APP_DIR, LOG_PATH, VERSION, WEB_DIR, load_config, save_config
@@ -35,7 +36,9 @@ from hud.chzzk import Chzzk, toast  # noqa: E402
 from hud.mouse import MouseBattery  # noqa: E402
 from hud.launch import open_target  # noqa: E402
 
-COLLAPSED_W, EXPANDED_W = 316, 1180
+COLLAPSED_W, PANEL_GAP = 316, 12          # 왼쪽 메뉴 열 너비, 메뉴 창과의 간격 (배율 100% 기준 CSS px)
+DEFAULT_LAYOUT = {"monitor": 0, "side": "left", "margin_x": 24, "margin_y": 24, "scale": 1.0,
+                  "panel_width": 852, "height_mode": "fit", "height": 900}
 
 
 def _arg(name, default=None):
@@ -45,11 +48,17 @@ def _arg(name, default=None):
 class Api:
     def __init__(self):
         self._window = None
-        self._width = COLLAPSED_W
         self._pinned = False
-        cfg = load_config()
-        self._height = desktop.fit_height(cfg["window"]["x"], cfg["window"]["y"])
+        self._expanded = False
+        self._flip = False
+        self._ignore_move_until = 0.0
         self._move_timer = None
+        cfg = load_config()
+        if "layout" not in cfg:   # 이전 버전: 창 좌표(window.x/y)만 있던 설정을 layout 으로 옮김
+            mon = desktop.monitor_at(cfg["window"]["x"] + 10, cfg["window"]["y"] + 10)
+            cfg["layout"] = {**DEFAULT_LAYOUT, "monitor": mon["index"],
+                             "margin_x": max(0, cfg["window"]["x"] - mon["left"]), "margin_y": max(0, cfg["window"]["y"] - mon["top"])}
+            save_config(cfg)
         self._battery = MouseBattery()
         self._media = media.Media(players.current()["match"])
         self._chzzk = Chzzk()
@@ -261,6 +270,8 @@ class Api:
             "player_custom": cfg.get("media", {}).get("custom", {}),
             "font": cfg.get("font", {}),
             "menu": self._menu(cfg),
+            "layout": self._layout(),
+            "monitors": [{"index": m["index"], "name": m["name"]} for m in desktop.monitors()],
         }
 
     def save_settings(self, s):
@@ -298,6 +309,8 @@ class Api:
         save_config(cfg)
         if "player" in s:
             self._media.set_prefer(players.current()["match"])
+        if isinstance(s.get("layout"), dict):
+            self.apply_layout(s["layout"])
         return True
 
     def set_theme(self, theme):
@@ -320,33 +333,89 @@ class Api:
     def open_log(self):
         return open_target(str(LOG_PATH))
 
-    # ---------- 창 ----------
+    # ---------- 창 위치·크기 ----------
+    # 설정의 layout(모니터, 붙일 쪽, 여백, 배율, 메뉴 창 너비, 높이)으로 창 좌표를 계산한다.
+    # '기준 위치'는 왼쪽 메뉴 열이 놓이는 곳. 메뉴 창을 펼칠 때 공간이 있는 쪽으로 펼친다.
+    def _layout(self):
+        L = {**DEFAULT_LAYOUT, **load_config().get("layout", {})}
+        L["scale"] = min(1.6, max(0.7, float(L["scale"])))
+        return L
+
+    def _geometry(self, expanded: bool):
+        L = self._layout()
+        mons = desktop.monitors()
+        mon = mons[L["monitor"]] if 0 <= L["monitor"] < len(mons) else mons[0]
+        k = L["scale"] * (desktop.dpi_scale(self._window) if self._window and self._pinned else 1.0)
+        col_w = round(COLLAPSED_W * k)
+        exp_w = round((COLLAPSED_W + PANEL_GAP + L["panel_width"]) * k)
+        mx, my = round(L["margin_x"] * k / L["scale"]), round(L["margin_y"] * k / L["scale"])
+        work_h = mon["bottom"] - mon["top"]
+        h = work_h - 2 * my if L["height_mode"] == "fit" else min(work_h - my, round(L["height"] * k / L["scale"]))
+        h = max(round(480 * k), h)
+        base_x = mon["left"] + mx if L["side"] == "left" else mon["right"] - mx - col_w
+        y = mon["top"] + my
+        if not expanded:
+            return {"x": base_x, "y": y, "w": col_w, "h": h, "flip": False, "zoom": L["scale"]}
+        # 오른쪽에 붙어 있거나 오른쪽 공간이 모자라면 왼쪽으로 펼친다
+        flip = L["side"] == "right" or base_x + exp_w > mon["right"]
+        x = base_x + col_w - exp_w if flip else base_x
+        x = max(mon["left"], min(x, mon["right"] - exp_w))
+        return {"x": x, "y": y, "w": exp_w, "h": h, "flip": flip, "zoom": L["scale"]}
+
+    def _apply_geometry(self):
+        g = self._geometry(self._expanded)
+        self._flip = g["flip"]
+        self._ignore_move_until = time.time() + 1.5
+        desktop.set_bounds(self._window, g["x"], g["y"], g["w"], g["h"])
+        return g
+
     def set_expanded(self, on):
-        self._width = EXPANDED_W if on else COLLAPSED_W
+        self._expanded = bool(on)
         if self._pinned:
-            desktop.set_size(self._window, self._width, self._height)
+            g = self._apply_geometry()
+            return {"flip": g["flip"]}
+        return {"flip": False}
+
+    def apply_layout(self, layout):
+        """설정 화면의 '위치·크기 적용'."""
+        cfg = load_config()
+        cfg["layout"] = {**DEFAULT_LAYOUT, **{k: layout[k] for k in DEFAULT_LAYOUT if k in layout}}
+        save_config(cfg)
+        desktop.set_zoom(self._window, self._layout()["scale"])
+        self._apply_geometry()
         return True
 
     def _pin(self):
-        desktop.pin_to_desktop(self._window, self._width, self._height)
+        desktop.pin_to_desktop(self._window)
         self._pinned = True
+        desktop.set_zoom(self._window, self._layout()["scale"])
+        self._apply_geometry()
         peek = _arg("peek")
         if peek:
             threading.Timer(4, desktop.peek_front, args=(self._window, float(peek))).start()
 
     def _on_moved(self, x, y):
-        """끌어서 옮긴 뒤 0.6초 동안 더 움직이지 않으면 위치 저장 + 그 모니터 높이에 다시 맞춤."""
+        """시계를 끌어 옮긴 뒤 0.6초 동안 멈추면, 그 위치를 설정(모니터·붙일 쪽·여백)으로 바꿔 저장하고 높이를 맞춘다."""
+        if time.time() < self._ignore_move_until:
+            return
         if self._move_timer:
             self._move_timer.cancel()
 
         def settle():
+            L = self._layout()
+            k = L["scale"] * desktop.dpi_scale(self._window)
+            col_w = round(COLLAPSED_W * k)
+            exp_w = round((COLLAPSED_W + PANEL_GAP + L["panel_width"]) * k)
+            base_x = x + exp_w - col_w if (self._expanded and self._flip) else x
+            mon = desktop.monitor_at(base_x + col_w // 2, y + 20)
+            side = "left" if base_x + col_w / 2 < (mon["left"] + mon["right"]) / 2 else "right"
+            mx = base_x - mon["left"] if side == "left" else mon["right"] - (base_x + col_w)
+            L.update(monitor=mon["index"], side=side,
+                     margin_x=max(0, round(mx * L["scale"] / k)), margin_y=max(0, round((y - mon["top"]) * L["scale"] / k)))
             c = load_config()
-            c["window"]["x"], c["window"]["y"] = int(x), int(y)
+            c["layout"] = L
             save_config(c)
-            h = desktop.fit_height(x, y)
-            if h != self._height:
-                self._height = h
-                desktop.set_size(self._window, self._width, h)
+            self._apply_geometry()
 
         self._move_timer = threading.Timer(0.6, settle)
         self._move_timer.start()
@@ -365,11 +434,11 @@ def main():
         log.info("이미 실행 중이라 종료")
         return
     os.chdir(APP_DIR)
-    cfg = load_config()
     api = Api()
+    g = api._geometry(False)
     win = webview.create_window(
         "Desktop HUD", url=str(WEB_DIR / "index.html"), js_api=api,
-        width=COLLAPSED_W, height=api._height, x=cfg["window"]["x"], y=cfg["window"]["y"],
+        width=g["w"], height=g["h"], x=g["x"], y=g["y"],
         frameless=True, transparent=True, resizable=False, easy_drag=False, shadow=False,
         background_color="#000000",
     )

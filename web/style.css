@@ -4,8 +4,10 @@
 @font-face { font-family: "Rajdhani"; src: url("fonts/Rajdhani-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
 @font-face { font-family: "Rajdhani"; src: url("fonts/Rajdhani-SemiBold.ttf") format("truetype"); font-weight: 600 700; font-display: swap; }
 
-/* ===== 테마 변수 ===== */
-:root {
+/* ===== 테마 변수 =====
+   body 에 정의해야 설정에서 body 에 직접 넣는 --pa / --ga (불투명도) 가 --panel / --glass 계산에 그대로 쓰인다.
+   (:root 에 두면 --panel 이 :root 의 값으로 미리 계산돼 버려서 설정이 반영되지 않았음) */
+body {
   --font-body: "Pretendard", "Segoe UI Variable Text", "Malgun Gothic", sans-serif;
   --font-num: "Rajdhani", var(--font-body);
   --sky: #0EA5E9;
@@ -61,9 +63,9 @@ body.dark {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 html, body { background: transparent; overflow: hidden; height: 100%; }
-body[data-font="suit"] { --font-body: "SUIT", "Segoe UI Variable Text", "Malgun Gothic", sans-serif; }
-body[data-font="system"] { --font-body: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif; }
-body[data-num="body"] { --font-num: var(--font-body); }
+body[data-font="suit"] { --font-body: "SUIT", "Segoe UI Variable Text", "Malgun Gothic", sans-serif; --font-num: "Rajdhani", var(--font-body); }
+body[data-font="system"] { --font-body: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif; --font-num: "Rajdhani", var(--font-body); }
+body[data-num="body"] { --font-num: var(--font-body) !important; }
 body {
   font-family: var(--font-body);
   font-size: 13px; line-height: 1.4; color: var(--ink);
@@ -260,3 +262,22 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
 .mo .g { font-size: 14px; }
 .mo.off .nm { color: var(--mut); text-decoration: line-through; }
 .mo .icon-btn[disabled] { opacity: .3; pointer-events: none; }
+
+/* HUD 를 화면 오른쪽에 두면 메뉴 창이 왼쪽에 열린다 */
+#app.flip { flex-direction: row-reverse; }
+#app.flip .mi.on { box-shadow: inset -3px 0 0 var(--sky); }
+#app.flip .mi.on .cv { transform: translateX(-3px) scaleX(-1); }
+#app.flip .mi .cv { transform: scaleX(-1); }
+
+/* 메뉴 창 등장/퇴장: 메뉴가 있는 쪽에서 미끄러지며 */
+@keyframes slideFromLeft { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes slideFromRight { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+#right.enter { animation: slideFromLeft .22s cubic-bezier(.2, .8, .2, 1); }
+#app.flip #right.enter { animation-name: slideFromRight; }
+#right.leave { transition: opacity .15s, transform .15s; opacity: 0; transform: translateX(-12px); }
+#app.flip #right.leave { transform: translateX(12px); }
+
+/* 설정: 숫자 입력 칸 */
+.set input[type=number] { border: 1px solid var(--hl); background: var(--input); color: var(--ink); padding: 5px 6px; font: inherit; font-size: 12px; outline: none; }
+.set input[type=number]:focus { border-color: var(--sky); }
+.set .row label { min-width: 104px; }

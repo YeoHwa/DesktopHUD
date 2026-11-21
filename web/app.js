@@ -137,11 +137,24 @@ const PANELS = {
 async function openMenu(key) {
   const same = S.menu === key;
   $$('.mi').forEach(m => m.classList.remove('on'));
-  if (same || !key) { S.menu = null; $('#right').hidden = true; await api().set_expanded(false); return; }
-  if (!S.menu) await api().set_expanded(true);
+  const R = $('#right');
+  if (same || !key) {
+    // 닫기: 창이 줄어들기 전에 메뉴 창을 먼저 부드럽게 접는다
+    S.menu = null; R.classList.remove('enter'); R.classList.add('leave');
+    await new Promise(r => setTimeout(r, 160));
+    R.hidden = true; R.classList.remove('leave');
+    await api().set_expanded(false); $('#app').classList.remove('flip');
+    return;
+  }
+  if (!S.menu) {
+    // 열기: 창을 넓힌 뒤(오른쪽에 공간이 없으면 왼쪽으로) 메뉴 쪽에서 미끄러지듯 나타나게
+    const r = await api().set_expanded(true);
+    $('#app').classList.toggle('flip', !!(r && r.flip));
+    R.classList.remove('enter'); void R.offsetWidth; R.classList.add('enter');
+  }
   S.menu = key;
   const mi = $(`.mi[data-k="${key}"]`); if (mi) mi.classList.add('on');
-  $('#right').hidden = false;
+  R.hidden = false;
   $('#rt').textContent = PANELS[key].title; $('#rs').textContent = ''; $('#chips').innerHTML = '';
   $('#body').innerHTML = '<div class="empty">불러오는 중…</div>';
   PANELS[key].render();
@@ -275,9 +288,19 @@ async function renderSettings() {
       <div class="row"><label>테마</label><div class="seg" id="s-theme" style="flex:none;width:200px"><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
       <div class="row"><label>글꼴</label><div class="seg" id="s-font" style="flex:none;width:300px"><button data-v="pretendard" style="font-family:Pretendard">Pretendard</button><button data-v="suit" style="font-family:SUIT">SUIT</button><button data-v="system">Windows 기본</button></div></div>
       <div class="row"><label>숫자 글꼴</label><div class="seg" id="s-num" style="flex:none;width:300px"><button data-v="rajdhani" style="font-family:Rajdhani;font-size:13px">Rajdhani 0123</button><button data-v="body">본문 글꼴과 같게</button></div></div>
-      <div class="row"><label>왼쪽 패널</label><input type="range" id="s-pa" min="0.2" max="1" step="0.05" value="${op.panel ?? 0.7}"><span class="val" id="s-pa-v"></span></div>
-      <div class="row"><label>오른쪽 패널</label><input type="range" id="s-ga" min="0.1" max="1" step="0.05" value="${op.glass ?? 0.4}"><span class="val" id="s-ga-v"></span></div>
-      <div class="desc">숫자가 낮을수록 배경화면이 더 비쳐 보여요. 시계 부분을 끌면 HUD 위치를 옮길 수 있어요.</div></div>
+      <div class="row"><label>왼쪽 패널 투명도</label>${numSlider('s-pa', 0, 95, 1, transp(op.panel ?? 0.7), '%')}</div>
+      <div class="row"><label>오른쪽 창 투명도</label>${numSlider('s-ga', 0, 95, 1, transp(op.glass ?? 0.4), '%')}</div>
+      <div class="desc">0% = 완전히 불투명, 숫자가 클수록 배경화면이 더 비쳐 보여요. 움직이면 바로 미리 보이고, 저장하면 유지돼요. (테마마다 따로 저장)</div></div>
+    <div class="set"><h4>위치·크기</h4><div class="desc">시계 부분을 끌어서 옮길 수도 있어요. 오른쪽에 두면 메뉴 창이 왼쪽으로 열려요.</div>
+      <div class="row"><label>모니터</label><select id="s-mon" style="flex:none;min-width:240px">${s.monitors.map(m => `<option value="${m.index}"${m.index === s.layout.monitor ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
+      <div class="row"><label>붙일 쪽</label><div class="seg" id="s-side" style="flex:none;width:200px"><button data-v="left">왼쪽</button><button data-v="right">오른쪽</button></div></div>
+      <div class="row"><label>가장자리 여백</label>${numSlider('s-mx', 0, 600, 4, s.layout.margin_x, 'px')}</div>
+      <div class="row"><label>위쪽 여백</label>${numSlider('s-my', 0, 400, 4, s.layout.margin_y, 'px')}</div>
+      <div class="row"><label>크기</label>${numSlider('s-scale', 70, 160, 5, Math.round(s.layout.scale * 100), '%')}</div>
+      <div class="row"><label>메뉴 창 너비</label>${numSlider('s-pw', 480, 1400, 20, s.layout.panel_width, 'px')}</div>
+      <div class="row"><label>높이</label><div class="seg" id="s-hmode" style="flex:none;width:200px"><button data-v="fit">화면에 맞춤</button><button data-v="custom">직접 지정</button></div>
+        <span id="s-h-wrap"${s.layout.height_mode === 'custom' ? '' : ' hidden'}>${numSlider('s-h', 480, 2000, 10, s.layout.height, 'px')}</span></div>
+      <div class="row"><button class="btn" id="s-layout-apply">위치·크기 적용</button><span class="hint" id="s-layout-msg" style="margin:0"></span></div></div>
     <div class="set"><h4>소리 출력 버튼</h4><div class="desc">왼쪽 위 두 버튼에 연결할 출력 장치예요. '사용 안 함' 장치도 고르면 자동으로 켜져요.</div>
       ${favRow(0)}${favRow(1)}</div>
     <div class="set"><h4>음악 플레이어</h4><div class="desc">왼쪽 아래 플레이어가 먼저 보여 줄 앱이에요. 버튼을 누르면 이 앱이 열려요.</div>
@@ -323,10 +346,22 @@ async function renderSettings() {
   // 메뉴 순서
   S.menuDraft = JSON.parse(JSON.stringify(s.menu));
   renderMenuOrder();
-  const showOp = () => { $('#s-pa-v').textContent = Math.round($('#s-pa').value * 100) + '%'; $('#s-ga-v').textContent = Math.round($('#s-ga').value * 100) + '%'; };
-  showOp();
-  const previewOp = () => { document.body.style.setProperty('--pa', $('#s-pa').value); document.body.style.setProperty('--ga', $('#s-ga').value); showOp(); };
-  $('#s-pa').oninput = previewOp; $('#s-ga').oninput = previewOp;
+  // 투명도: 슬라이더와 숫자 칸이 서로 맞춰지고, 바로 미리 보기
+  bindNumSliders();
+  const previewOp = () => {
+    document.body.style.setProperty('--pa', opac(numVal('s-pa')));
+    document.body.style.setProperty('--ga', opac(numVal('s-ga')));
+  };
+  ['s-pa', 's-ga'].forEach(id => $$(`[data-ns="${id}"]`).forEach(el => el.addEventListener('input', previewOp)));
+  // 위치·크기
+  setSeg('s-side', s.layout.side); setSeg('s-hmode', s.layout.height_mode);
+  $$('#s-side button').forEach(b => b.onclick = () => setSeg('s-side', b.dataset.v));
+  $$('#s-hmode button').forEach(b => b.onclick = () => { setSeg('s-hmode', b.dataset.v); $('#s-h-wrap').hidden = b.dataset.v !== 'custom'; });
+  $('#s-layout-apply').onclick = async () => {
+    $('#s-layout-msg').textContent = '적용 중…';
+    const ok = await api().apply_layout(layoutForm());
+    $('#s-layout-msg').textContent = ok ? '적용했어요' : '적용하지 못했어요';
+  };
   $$('#s-theme button').forEach(b => b.onclick = async () => {
     await saveSettingsForm(); applyTheme(await api().set_theme(b.dataset.v)); renderSettings();
   });
@@ -342,6 +377,32 @@ async function renderSettings() {
   $('#s-cfg').onclick = () => api().open_config();
   $('#s-log').onclick = () => api().open_log();
   $('#s-save').onclick = async () => { await saveSettingsForm(); $('#s-msg').textContent = '저장했어요'; notify('설정을 저장했어요'); };
+}
+
+/* 설정 도우미: 슬라이더 + 숫자 입력 칸 */
+const transp = o => Math.round((1 - Number(o)) * 100);               // 불투명도(0~1) → 투명도(%)
+const opac = t => Math.round((1 - Math.min(95, Math.max(0, Number(t) || 0)) / 100) * 100) / 100;
+function numSlider(id, min, max, step, value, unit) {
+  return `<input type="range" data-ns="${id}" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">
+    <input type="number" data-ns="${id}" id="${id}-n" min="${min}" max="${max}" step="${step}" value="${value}" style="width:70px;flex:none"><span class="val">${unit}</span>`;
+}
+function bindNumSliders() {
+  $$('input[type=range][data-ns]').forEach(r => {
+    const n = $(`#${r.id}-n`);
+    r.addEventListener('input', () => { n.value = r.value; });
+    n.addEventListener('input', () => {
+      const v = Math.min(Number(n.max), Math.max(Number(n.min), Number(n.value) || 0));
+      r.value = v; if (String(v) !== n.value && n.value !== '') n.value = v;
+    });
+  });
+}
+const numVal = id => Number($(`#${id}`).value);
+function layoutForm() {
+  return {
+    monitor: Number($('#s-mon').value), side: $('#s-side .on')?.dataset.v || 'left',
+    margin_x: numVal('s-mx'), margin_y: numVal('s-my'), scale: numVal('s-scale') / 100,
+    panel_width: numVal('s-pw'), height_mode: $('#s-hmode .on')?.dataset.v || 'fit', height: numVal('s-h'),
+  };
 }
 
 const MENU_NAMES = { game: '게임', live: '치지직 라이브', msg: '메신저·커뮤니티', file: '내 파일', dev: '개발 유틸리티', sys: '시스템', web: '웹 바로가기' };
@@ -387,12 +448,12 @@ async function saveSettingsForm() {
   const s = S.settings; if (!s || !$('#s-save')) return;
   const theme = document.body.classList.contains('dark') ? 'dark' : 'light';
   const opacity = JSON.parse(JSON.stringify(s.opacity || {}));
-  opacity[theme] = { panel: Number($('#s-pa').value), glass: Number($('#s-ga').value) };
+  opacity[theme] = { panel: opac(numVal('s-pa')), glass: opac(numVal('s-ga')) };
   const favorites = [0, 1].map(i => ({ id: $(`[data-fav="${i}"]`).value, label: $(`[data-favlabel="${i}"]`).value.trim() || '출력 ' + (i + 1), icon: $(`[data-favicon="${i}"]`).value }));
   await api().save_settings({
     opacity, favorites, keyboard_url: $('#s-kb').value, projects_dir: $('#s-proj').value, mouse_provider: $('#s-mouse').value,
     game_close: $('#s-gclose').value, dev_close: $('#s-dclose').value, wsl_shutdown: $('#s-wsl').classList.contains('on'),
-    menu: S.menuDraft, player: $('#s-player').value, font: curFont(),
+    menu: S.menuDraft, player: $('#s-player').value, font: curFont(), layout: layoutForm(),
     player_custom: { target: $('#s-custom').value, name: $('#s-custom').selectedOptions[0] ? $('#s-custom').selectedOptions[0].textContent : '' },
   });
   setPlayer(await api().player());
