@@ -392,9 +392,22 @@ class Api:
         self._pinned = True
         desktop.set_zoom(self._window, self._layout()["scale"])
         self._apply_geometry()
+        desktop.watch_visibility(self._window, self._on_visibility)
         peek = _arg("peek")
         if peek:
             threading.Timer(4, desktop.peek_front, args=(self._window, float(peek))).start()
+
+    def _on_visibility(self, visible: bool):
+        """다른 창에 완전히 가려지면 화면 갱신을 멈추고 WebView2 를 메모리 절약 모드로 (치지직 알림 확인은 계속)."""
+        log.info("HUD %s", "보임 → 갱신 재개" if visible else "가려짐 → 갱신 멈춤")
+        try:
+            self._window.evaluate_js(f"window.setVisible && window.setVisible({'true' if visible else 'false'})")
+        except Exception as e:
+            log.debug("보임 상태 전달 실패: %s", e)
+        desktop.set_memory_saving(self._window, not visible)
+        if not visible:
+            # 가려진 동안은 HUD 본체가 쥐고 있던 안 쓰는 메모리도 Windows 에 돌려준다 (필요하면 다시 불러옴)
+            threading.Timer(10, trim_own_memory).start()
 
     def _on_moved(self, x, y):
         """시계를 끌어 옮긴 뒤 0.6초 동안 멈추면, 그 위치를 설정(모니터·붙일 쪽·여백)으로 바꿔 저장하고 높이를 맞춘다."""
@@ -424,6 +437,16 @@ class Api:
 
     def quit(self):
         self._window.destroy()
+
+
+def trim_own_memory():
+    """이 프로세스의 작업 집합(실제 RAM 에 올라와 있는 양)을 비운다."""
+    from ctypes import wintypes
+    k32, psapi = ctypes.WinDLL("kernel32"), ctypes.WinDLL("psapi")
+    k32.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.EmptyWorkingSet.argtypes = [wintypes.HANDLE]
+    ok = psapi.EmptyWorkingSet(k32.GetCurrentProcess())
+    log.info("HUD 본체 메모리 정리: %s", "완료" if ok else "실패")
 
 
 def single_instance():

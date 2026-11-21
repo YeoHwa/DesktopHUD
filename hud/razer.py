@@ -183,10 +183,13 @@ class RazerBattery:
         return None
 
     def _run(self):
+        idle = 30
         while True:
             try:
                 if self._found is None:
                     self._found = self._scan()
+                    # 못 찾으면 다음 확인까지 점점 길게 (30초 → 최대 5분), 찾으면 원래대로
+                    idle = 30 if self._found else min(300, idle * 2)
                 if self._found:
                     path, tid, name = self._found
                     res = self._read(path, tid)
@@ -199,4 +202,4 @@ class RazerBattery:
             except Exception as e:
                 log.debug("Razer 확인 실패: %s", e)
                 self._found = None
-            time.sleep(60 if self._found else 30)
+            time.sleep(60 if self._found else idle)

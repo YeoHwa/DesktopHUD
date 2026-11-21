@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 APP_NAME = "DesktopHUD"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 FROZEN = getattr(sys, "frozen", False)
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 WEB_DIR = APP_DIR / "web"

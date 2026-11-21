@@ -154,6 +154,67 @@ def set_bounds(window, x: int, y: int, width: int, height: int):
     user32.SetWindowPos(hwnd_of(window), None, int(x), int(y), int(width), int(height), SWP_NOZORDER | SWP_NOACTIVATE)
 
 
+user32.WindowFromPoint.restype = wintypes.HWND
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.GetAncestor.restype = wintypes.HWND
+user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+
+
+def is_visible_on_screen(window, cols: int = 5, rows: int = 9) -> bool:
+    """HUD 가 화면에 조금이라도 보이는지. HUD 위를 격자로 찍어 보고, 그 자리 맨 위 창이 HUD 인 점이 하나라도 있으면 보임.
+    (HUD 는 항상 맨 뒤라서 다른 창에 완전히 가려지면 False)"""
+    hwnd = hwnd_of(window)
+    if user32.IsIconic(hwnd) or not user32.IsWindowVisible(hwnd):
+        return False
+    r = wintypes.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(r))
+    w, h = r.right - r.left, r.bottom - r.top
+    if w <= 0 or h <= 0:
+        return False
+    me = hwnd.value
+    for i in range(cols):
+        for j in range(rows):
+            pt = wintypes.POINT(r.left + int(w * (i + 0.5) / cols), r.top + int(h * (j + 0.5) / rows))
+            hit = user32.WindowFromPoint(pt)
+            if hit and user32.GetAncestor(hit, 2) == me:   # GA_ROOT
+                return True
+    return False
+
+
+def set_memory_saving(window, low: bool):
+    """가려져 있는 동안 WebView2 메모리 사용을 줄인다 (MemoryUsageTargetLevel)."""
+    from System import Action
+    form = window.native
+
+    def apply():
+        try:
+            from Microsoft.Web.WebView2.Core import CoreWebView2MemoryUsageTargetLevel as Level
+            core = form.webview.CoreWebView2
+            if core is not None:
+                core.MemoryUsageTargetLevel = Level.Low if low else Level.Normal
+        except Exception as e:
+            log.debug("WebView2 메모리 절약 설정 실패: %s", e)
+
+    form.BeginInvoke(Action(apply))
+
+
+def watch_visibility(window, on_change, interval: float = 1.0):
+    """보임/가려짐이 바뀔 때마다 on_change(bool) 호출."""
+    def loop():
+        last = None
+        while True:
+            try:
+                vis = is_visible_on_screen(window)
+                if vis != last:
+                    last = vis
+                    on_change(vis)
+            except Exception as e:
+                log.debug("보임 확인 실패: %s", e)
+            time.sleep(interval)
+    threading.Thread(target=loop, daemon=True, name="visibility").start()
+
+
 def set_zoom(window, zoom: float):
     """HUD 전체 크기 배율 (WebView2 확대/축소)."""
     from System import Action

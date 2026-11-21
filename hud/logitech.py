@@ -165,6 +165,7 @@ class LogitechBattery:
 
     def _run(self):
         time.sleep(15)   # G HUB 가 먼저 연결될 기회를 준다
+        idle = 30
         while True:
             if self.paused():
                 self.state = {"ok": False, "status": "nodevice", "source": self.source}
@@ -173,6 +174,7 @@ class LogitechBattery:
             try:
                 if self._found is None:
                     self._found = self._scan()
+                    idle = 30 if self._found else min(300, idle * 2)   # 못 찾으면 점점 드물게
                 if self._found:
                     path, dev, name = self._found
                     ch = _Channel(path)
@@ -189,4 +191,4 @@ class LogitechBattery:
             except Exception as e:
                 log.debug("Logitech 직접 읽기 실패: %s", e)
                 self._found = None
-            time.sleep(60 if self._found else 30)
+            time.sleep(60 if self._found else idle)

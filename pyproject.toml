@@ -1,6 +1,6 @@
 [project]
 name = "desktop-hud"
-version = "1.2.0"
+version = "1.2.1"
 description = "Windows 바탕화면 HUD — 게임 런처, 파일, 음악, 치지직 알림, 마우스 배터리"
 requires-python = ">=3.12,<3.13"
 dependencies = [

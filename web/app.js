@@ -452,6 +452,13 @@ async function runQuick(btn) {
   }
 }
 
+// Python 쪽에서 HUD 가 보이게/가려지게 될 때 부른다
+window.setVisible = visible => {
+  const wasHidden = S.hidden;
+  S.hidden = !visible;
+  if (visible && wasHidden) { tickClock(); pollStatus(); pollMedia(); if (S.menu === 'live') renderLive(); }
+};
+
 // Python 쪽에서 창 위치가 바뀔 때 부른다 (붙일 쪽 변경, 끌어서 옮기기 등)
 window.setFlip = flip => {
   const app = $('#app');
@@ -594,7 +601,7 @@ function applyTheme(theme, opacity) {
 /* ---------------- 시작 ---------------- */
 window.addEventListener('pywebviewready', async () => {
   bindEvents();
-  tickClock(); setInterval(tickClock, 1000);
+  tickClock(); setInterval(() => { if (!S.hidden) tickClock(); }, 1000);
   const d = await api().init();
   S.opacity = d.opacity; applyTheme(d.theme, d.opacity); applyFont(d.font);
   S.games = d.games; S.messengers = d.messengers; S.web = d.web; S.favs = d.audioFavs;
@@ -604,8 +611,10 @@ window.addEventListener('pywebviewready', async () => {
   applyMenu(d.menu); setPlayer(d.player);
   $('#gcnt').textContent = S.games.length;
   renderAudioButtons(); setSeg('snd', d.audio); renderQuick(d.quickButtons);
-  pollStatus(); setInterval(pollStatus, 2000);
-  pollMedia(); setInterval(pollMedia, 1500); setInterval(tickProgress, 250);
-  setInterval(() => { if (S.menu === 'live') renderLive(); }, 30000);
+  // 다른 창에 완전히 가려져 있으면(S.hidden) 아무것도 새로 그리지 않는다 — 보이는 순간 바로 갱신
+  pollStatus(); setInterval(() => { if (!S.hidden) pollStatus(); }, 2000);
+  pollMedia(); setInterval(() => { if (!S.hidden) pollMedia(); }, 1500);
+  setInterval(() => { if (!S.hidden && S.media && S.media.playing) tickProgress(); }, 500);
+  setInterval(() => { if (!S.hidden && S.menu === 'live') renderLive(); }, 30000);
   if (d.openPanel) openMenu(d.openPanel);
 });
