@@ -1,0 +1,26 @@
+[project]
+name = "desktop-hud"
+version = "1.0.1"
+description = "Windows 바탕화면 HUD — 게임 런처, 파일, 음악, 치지직 알림, 마우스 배터리"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "comtypes>=1.5.0",
+    "icoextract>=0.3.1",
+    "nvidia-ml-py>=13.615.71",
+    "pillow>=13.0.0",
+    "psutil>=7.2.2",
+    "pycaw>=20260927",
+    "pywebview>=6.2.1",
+    "requests>=2.34.2",
+    "websocket-client>=1.9.2",
+    "winrt-runtime>=4.2.0",
+    "winrt-windows-data-xml-dom>=4!10.0.28000.2957",
+    "winrt-windows-foundation>=4!10.0.28000.2957",
+    "winrt-windows-foundation-collections>=4!10.0.28000.2957",
+    "winrt-windows-media-control>=4!10.0.28000.2957",
+    "winrt-windows-storage-streams>=4!10.0.28000.2957",
+    "winrt-windows-ui-notifications>=4!10.0.28000.2957",
+]
+
+[dependency-groups]
+dev = []

@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 빌드 결과물
+dist/
+build/
+
+# 개인 설정 / 실행 중 생기는 파일 (이전 버전이 프로젝트 폴더에 만들던 것 포함)
+config.json
+state.json
+*.log
+cache/
