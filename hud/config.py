@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 APP_NAME = "DesktopHUD"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 FROZEN = getattr(sys, "frozen", False)
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 WEB_DIR = APP_DIR / "web"
@@ -42,11 +42,7 @@ DEFAULT_CONFIG = {
     "media": {"player": "youtube_music", "custom": {}},   # youtube_music / spotify / apple_music / melon / genie / any / custom
     "menu": [{"key": k, "show": True} for k in ("game", "live", "msg", "file", "dev", "sys", "web")],
     "audio": {"favorites": []},
-    "modes": {
-        "game": {"close": ["Docker Desktop", "com.docker.backend", "com.docker.build", "com.docker.service"],
-                 "wsl_shutdown": True, "start": [], "script": ""},
-        "dev": {"close": [], "start": [], "script": ""},
-    },
+    "quick": ["mic", "capture", "lock", "ram"],   # 왼쪽 위 빠른 버튼 4개 (hud/quick.py 의 ACTIONS 중에서)
     "wallpaper_engine_exe": "",
     "docker": {"desktop": "", "cli": ""},
     "games": {"hidden": ["steam:431960", "steam:228980"], "extra": [], "rename": {}},
@@ -92,7 +88,6 @@ def _first_run_defaults() -> dict:
     cfg["wallpaper_engine_exe"] = detect.wallpaper_engine_exe()
     desk, cli = detect.docker_paths()
     cfg["docker"] = {"desktop": desk, "cli": cli}
-    cfg["modes"]["game"]["wsl_shutdown"] = detect.wsl_installed()
 
     msgs = []
     discord = os.path.expandvars(r"%LOCALAPPDATA%\Discord\Update.exe")

@@ -18,7 +18,7 @@ from pathlib import Path
 
 APP_NAME = "Desktop HUD"
 APP_ID = "DesktopHUD"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 SRC_ROOT = Path(__file__).resolve().parent.parent           # 배포 폴더 (runtime, app 이 들어 있는 곳)
 DEST = Path(os.environ["LOCALAPPDATA"]) / "Programs" / APP_ID
 UNINSTALL_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}"

@@ -277,6 +277,17 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
 #right.leave { transition: opacity .15s, transform .15s; opacity: 0; transform: translateX(-12px); }
 #app.flip #right.leave { transform: translateX(12px); }
 
+/* 빠른 버튼 (왼쪽 위, 4칸) */
+.quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.qb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 7px 2px 6px; background: var(--seg); }
+.qb .g { font-size: 16px; color: var(--sky); }
+.qb span { font-size: 10.5px; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.qb:hover { background: var(--soft); }
+.qb:active { transform: scale(.97); }
+.qb.on { background: var(--sky); }
+.qb.on .g, .qb.on span { color: var(--on-sky); }
+.qb.busy { opacity: .6; }
+
 /* 설정: 숫자 입력 칸 */
 .set input[type=number] { border: 1px solid var(--hl); background: var(--input); color: var(--ink); padding: 5px 6px; font: inherit; font-size: 12px; outline: none; }
 .set input[type=number]:focus { border-color: var(--sky); }

@@ -31,7 +31,7 @@ log.info("시작 시도 v%s (exe=%s)", VERSION, sys.executable)
 
 import webview  # noqa: E402
 
-from hud import audio, desktop, games, icons, media, mode, players, system  # noqa: E402
+from hud import audio, desktop, games, icons, media, players, quick, system  # noqa: E402
 from hud.chzzk import Chzzk, toast  # noqa: E402
 from hud.mouse import MouseBattery  # noqa: E402
 from hud.launch import open_target  # noqa: E402
@@ -73,7 +73,7 @@ class Api:
             "games": self.games(False),
             "messengers": system.messengers(wait=0),
             "web": system.web_links(wait=0),
-            "mode": mode.get_mode(),
+            "quickButtons": quick.buttons(),
             "audioFavs": audio.favorites(),
             "audio": audio.default_id(),
             "hasKeyboard": bool(cfg.get("keyboard_url")),
@@ -117,8 +117,8 @@ class Api:
             "battery": self._battery.state,
             "audio": audio.default_id(),
             "volume": media.get_volume(),
-            "mode": mode.get_mode(),
             "quick": system.quick_state(),
+            "quickButtons": quick.buttons(),
             "live": sum(1 for s in self._chzzk.list() if s["live"]),
         }
 
@@ -127,8 +127,11 @@ class Api:
         audio.set_default(device_id)
         return audio.default_id()
 
-    def set_mode(self, m):
-        return mode.set_mode(m)
+    def quick_run(self, action):
+        return quick.run(action)
+
+    def quick_buttons(self):
+        return quick.buttons()
 
     def open_keyboard(self):
         return open_target(load_config().get("keyboard_url", ""))
@@ -261,10 +264,8 @@ class Api:
             "keyboard_url": cfg.get("keyboard_url", ""),
             "mouse_provider": cfg.get("mouse", {}).get("provider", "auto"),
             "projects_dir": cfg["dev"].get("projects_dir", ""),
-            "game_close": "\n".join(cfg["modes"]["game"].get("close", [])),
-            "dev_close": "\n".join(cfg["modes"]["dev"].get("close", [])),
-            "wsl_shutdown": cfg["modes"]["game"].get("wsl_shutdown", False),
-            "mode_script": bool(cfg["modes"]["game"].get("script")),
+            "quick": quick.selected(),
+            "quick_choices": quick.choices(),
             "players": players.choices(),
             "player": players.current()["id"],
             "player_custom": cfg.get("media", {}).get("custom", {}),
@@ -288,12 +289,8 @@ class Api:
             cfg["dev"]["projects_dir"] = s["projects_dir"].strip()
         if s.get("mouse_provider") in ("auto", "ghub", "logitech", "razer", "off"):
             cfg.setdefault("mouse", {})["provider"] = s["mouse_provider"]
-        if "game_close" in s:
-            cfg["modes"]["game"]["close"] = [x.strip() for x in s["game_close"].splitlines() if x.strip()]
-        if "dev_close" in s:
-            cfg["modes"]["dev"]["close"] = [x.strip() for x in s["dev_close"].splitlines() if x.strip()]
-        if "wsl_shutdown" in s:
-            cfg["modes"]["game"]["wsl_shutdown"] = bool(s["wsl_shutdown"])
+        if isinstance(s.get("quick"), list):
+            cfg["quick"] = [a for a in s["quick"] if a in quick.ACTIONS][:4] or quick.DEFAULT
         if isinstance(s.get("font"), dict):
             f = s["font"]
             cfg["font"] = {"body": f.get("body") if f.get("body") in ("pretendard", "suit", "system") else "pretendard",
@@ -367,6 +364,11 @@ class Api:
         self._flip = g["flip"]
         self._ignore_move_until = time.time() + 1.5
         desktop.set_bounds(self._window, g["x"], g["y"], g["w"], g["h"])
+        # 메뉴 창이 열린 채로 붙일 쪽이 바뀌어도 화면 배치(메뉴 창이 어느 쪽에 있는지)를 바로 맞춘다
+        try:
+            self._window.evaluate_js(f"window.setFlip && window.setFlip({'true' if g['flip'] else 'false'})")
+        except Exception as e:
+            log.debug("배치 갱신 실패: %s", e)
         return g
 
     def set_expanded(self, on):

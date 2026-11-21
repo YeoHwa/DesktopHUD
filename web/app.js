@@ -72,7 +72,7 @@ async function pollStatus() {
       }[b.status] || '마우스 찾는 중';
     }
     if (!S.busy.snd) setSeg('snd', st.audio);
-    if (!S.busy.mod) setSeg('mod', st.mode);
+    if (!S.busy.quick) renderQuick(st.quickButtons);
     if (!S.volDrag && st.volume.level != null) {
       $('#vol').value = st.volume.level; $('#volv').textContent = st.volume.muted ? '음소거' : st.volume.level;
       $('#volbtn').innerHTML = glyph(st.volume.muted ? 'E74F' : 'E767');
@@ -303,6 +303,8 @@ async function renderSettings() {
       <div class="row"><button class="btn" id="s-layout-apply">위치·크기 적용</button><span class="hint" id="s-layout-msg" style="margin:0"></span></div></div>
     <div class="set"><h4>소리 출력 버튼</h4><div class="desc">왼쪽 위 두 버튼에 연결할 출력 장치예요. '사용 안 함' 장치도 고르면 자동으로 켜져요.</div>
       ${favRow(0)}${favRow(1)}</div>
+    <div class="set"><h4>빠른 버튼</h4><div class="desc">왼쪽 위 소리 버튼 아래의 네 칸에 넣을 기능이에요.</div>
+      <div class="row">${[0, 1, 2, 3].map(i => `<select data-qslot="${i}" style="flex:1;min-width:120px">${s.quick_choices.map(c => `<option value="${c.id}"${s.quick[i] === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`).join('')}</div></div>
     <div class="set"><h4>음악 플레이어</h4><div class="desc">왼쪽 아래 플레이어가 먼저 보여 줄 앱이에요. 버튼을 누르면 이 앱이 열려요.</div>
       <div class="row"><label>플레이어</label><select id="s-player" style="flex:none;min-width:220px">
         ${s.players.map(p => `<option value="${p.id}"${s.player === p.id ? ' selected' : ''}>${esc(p.name)}${p.installed ? '' : ' (웹)'}</option>`).join('')}
@@ -320,13 +322,6 @@ async function renderSettings() {
       <div class="row"><input type="text" id="s-kb" value="${esc(s.keyboard_url)}" placeholder="https://"></div></div>
     <div class="set"><h4>개발 프로젝트 폴더</h4>
       <div class="row"><input type="text" id="s-proj" value="${esc(s.projects_dir)}" placeholder="예: C:\\Users\\이름\\source\\repos"><button class="btn ghost" id="s-proj-pick">찾아보기</button></div></div>
-    <div class="set"><h4>게임 모드 / 개발 모드</h4>
-      ${s.mode_script ? '<div class="desc">지금은 사용자 스크립트로 전환하고 있어요 (설정 파일의 modes.*.script). 아래 목록은 스크립트를 비우면 쓰여요.</div>' : ''}
-      <div class="desc">게임 모드로 바꿀 때 끌 프로그램 (프로세스 이름, 한 줄에 하나)</div>
-      <textarea id="s-gclose">${esc(s.game_close)}</textarea>
-      <div class="row"><button class="switch${s.wsl_shutdown ? ' on' : ''}" id="s-wsl" aria-label="WSL 끄기"></button><span class="desc">게임 모드에서 WSL도 끄기</span></div>
-      <div class="desc" style="margin-top:8px">개발 모드로 바꿀 때 끌 프로그램 (예: steam, NexonPlug)</div>
-      <textarea id="s-dclose">${esc(s.dev_close)}</textarea></div>
     <div class="row" style="gap:6px;margin:4px 0 8px"><button class="btn" id="s-save">저장</button><button class="btn ghost" id="s-cfg">설정 파일 열기</button><button class="btn ghost" id="s-log">로그 열기</button><span class="hint" id="s-msg" style="margin:0"></span></div>`;
   setSeg('s-theme', theme);
   // 글꼴: 누르면 바로 미리 적용, 저장하면 유지
@@ -372,7 +367,6 @@ async function renderSettings() {
     $('#s-auto').classList.toggle('on', now); $('#s-auto-t').textContent = now ? '켜짐' : '꺼짐';
     if (now !== want) notify('자동 실행 설정을 바꾸지 못했어요');
   };
-  $('#s-wsl').onclick = () => $('#s-wsl').classList.toggle('on');
   $('#s-proj-pick').onclick = async () => { const p = await api().pick_folder(); if (p) $('#s-proj').value = p; };
   $('#s-cfg').onclick = () => api().open_config();
   $('#s-log').onclick = () => api().open_log();
@@ -429,6 +423,44 @@ function applyMenu(menu) {
   menu.forEach(m => { const el = $(`.mi[data-k="${m.key}"]`, box); if (el) { box.appendChild(el); el.hidden = !m.show; } });
 }
 
+/* ---------------- 빠른 버튼 ---------------- */
+function renderQuick(buttons) {
+  if (!buttons) return;
+  const key = JSON.stringify(buttons);
+  if (key === S.quickKey) return;          // 바뀐 것이 없으면 다시 그리지 않음 (2초마다 상태 갱신)
+  S.quickKey = key;
+  $('#quick').innerHTML = buttons.map(b =>
+    `<button class="qb${b.on ? ' on' : ''}" data-q="${b.id}" data-confirm="${esc(b.confirm)}" title="${esc(b.name)}">${glyph(b.glyph)}<span>${esc(b.name)}</span></button>`).join('');
+}
+
+async function runQuick(btn) {
+  const id = btn.dataset.q, name = btn.title;
+  if (id === 'empty_bin') { runAction('empty_bin'); return; }
+  if (btn.dataset.confirm && !(await confirmBar(btn.dataset.confirm))) return;
+  S.busy.quick = true; btn.classList.add('busy');
+  try {
+    const r = await api().quick_run(id);
+    if (id === 'ram' && r) notify(`RAM ${r.freedGB}GB를 확보했어요`);
+    else if (id === 'mic' && r) notify(r.on === null ? '마이크를 찾지 못했어요' : r.on ? '마이크를 껐어요' : '마이크를 켰어요');
+    else if (id === 'focus' && r) notify(r.on ? '집중 모드: 메신저를 껐어요' : '집중 모드를 끄고 메신저를 다시 켰어요');
+    else if (id === 'mute' && r) notify(r.on ? '소리를 껐어요' : '소리를 켰어요');
+    else if (id === 'wallpaper' && r) notify(r.on ? '배경을 멈췄어요' : '배경을 다시 재생해요');
+    else if (!['lock', 'monitor', 'sleep', 'capture', 'clipboard'].includes(id)) notify(`${name} 실행`);
+  } finally {
+    btn.classList.remove('busy'); S.busy.quick = false; S.quickKey = null;
+    renderQuick(await api().quick_buttons());
+  }
+}
+
+// Python 쪽에서 창 위치가 바뀔 때 부른다 (붙일 쪽 변경, 끌어서 옮기기 등)
+window.setFlip = flip => {
+  const app = $('#app');
+  if (app.classList.contains('flip') === !!flip) return;
+  app.classList.toggle('flip', !!flip);
+  const R = $('#right');
+  if (!R.hidden) { R.classList.remove('enter'); void R.offsetWidth; R.classList.add('enter'); }
+};
+
 function applyFont(f) {
   document.body.dataset.font = (f && f.body) || 'pretendard';
   document.body.dataset.num = (f && f.num) || 'rajdhani';
@@ -452,12 +484,12 @@ async function saveSettingsForm() {
   const favorites = [0, 1].map(i => ({ id: $(`[data-fav="${i}"]`).value, label: $(`[data-favlabel="${i}"]`).value.trim() || '출력 ' + (i + 1), icon: $(`[data-favicon="${i}"]`).value }));
   await api().save_settings({
     opacity, favorites, keyboard_url: $('#s-kb').value, projects_dir: $('#s-proj').value, mouse_provider: $('#s-mouse').value,
-    game_close: $('#s-gclose').value, dev_close: $('#s-dclose').value, wsl_shutdown: $('#s-wsl').classList.contains('on'),
+    quick: [0, 1, 2, 3].map(i => $(`[data-qslot="${i}"]`).value),
     menu: S.menuDraft, player: $('#s-player').value, font: curFont(), layout: layoutForm(),
     player_custom: { target: $('#s-custom').value, name: $('#s-custom').selectedOptions[0] ? $('#s-custom').selectedOptions[0].textContent : '' },
   });
   setPlayer(await api().player());
-  S.opacity = opacity; S.favs = favorites; renderAudioButtons(); pollStatus();
+  S.opacity = opacity; S.favs = favorites; renderAudioButtons(); renderQuick(await api().quick_buttons()); pollStatus();
   $('#kb').hidden = !$('#s-kb').value.trim();
 }
 
@@ -473,13 +505,7 @@ function bindEvents() {
   $('#kb').onclick = () => api().open_keyboard();
   $('#yt').onclick = async () => { if (!(await api().open_player())) notify('설정에서 음악 앱을 골라 주세요'); };
 
-  $$('#mod button').forEach(b => b.onclick = async () => {
-    if (b.classList.contains('on') || S.busy.mod) return;
-    S.busy.mod = true; setSeg('mod', b.dataset.v);
-    await api().set_mode(b.dataset.v);
-    notify(`${b.textContent.trim()}로 전환 중이에요`);
-    setTimeout(() => S.busy.mod = false, 3000);
-  });
+  $('#quick').addEventListener('click', e => { const b = e.target.closest('.qb'); if (b) runQuick(b); });
 
   $$('.ctrl .cb').forEach(b => b.onclick = async () => { await api().media_control(b.dataset.m); setTimeout(pollMedia, 250); });
   const vol = $('#vol');
@@ -577,7 +603,7 @@ window.addEventListener('pywebviewready', async () => {
   if (d.chzzkIcon) $('#liveicon').innerHTML = `<img src="${d.chzzkIcon}" alt="">`;
   applyMenu(d.menu); setPlayer(d.player);
   $('#gcnt').textContent = S.games.length;
-  renderAudioButtons(); setSeg('snd', d.audio); setSeg('mod', d.mode);
+  renderAudioButtons(); setSeg('snd', d.audio); renderQuick(d.quickButtons);
   pollStatus(); setInterval(pollStatus, 2000);
   pollMedia(); setInterval(pollMedia, 1500); setInterval(tickProgress, 250);
   setInterval(() => { if (S.menu === 'live') renderLive(); }, 30000);
