@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" width="128" alt="Desktop HUD 아이콘"></p>
+
 # Desktop HUD
 
 Windows 바탕화면에 깔리는, PC방 런처 같은 HUD입니다.
@@ -75,7 +77,8 @@ hud/
   winrt_net.py     Windows 런타임 API 를 .NET 으로 호출
   system.py        시스템 상태, 빠른 기능, 파일, 개발 도구
   autostart.py     작업 스케줄러 자동 실행
-web/               HUD 화면 (HTML / CSS / JS)
+web/               HUD 화면 (HTML / CSS / JS), 아이콘(logo.ico / logo.png), 글꼴
+tools/make_icon.py 아이콘 만들기 (uv run python tools/make_icon.py)
 ```
 
 ## 알아 둘 점

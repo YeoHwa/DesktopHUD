@@ -238,6 +238,12 @@ def pin_to_desktop(window, width: int | None = None, height: int | None = None):
 
     def on_ui_thread():
         make_see_through(form, hwnd)
+        try:   # 창 아이콘 (작업 관리자 등에 보이는 아이콘)
+            from System.Drawing import Icon
+            from .config import WEB_DIR
+            form.Icon = Icon(str(WEB_DIR / "logo.ico"))
+        except Exception as e:
+            log.debug("창 아이콘 설정 실패: %s", e)
         cb = SUBCLASSPROC(_proc)
         _keep.append(cb)
         # 자식 창(WebView2)이 아니라 최상위 창에 걸어야 Z 순서를 잡을 수 있다
