@@ -89,14 +89,16 @@ async function pollMedia() {
 }
 function renderMedia() {
   const m = S.media;
+  const pname = (S.player && S.player.name) || '음악 앱';
   if (!m || !m.ok || !m.title) {
-    $('#title').textContent = '재생 중인 곡이 없어요'; $('#artist').textContent = 'YouTube Music을 열어 보세요';
+    $('#title').textContent = '재생 중인 곡이 없어요';
+    $('#artist').textContent = S.player && S.player.id !== 'any' ? `${pname}을(를) 열어 보세요` : '음악이나 영상을 재생해 보세요';
     $('#art').style.backgroundImage = ''; $('#art').innerHTML = glyph('E8D6');
     $('#pp').innerHTML = glyph('E768'); $('#cur').textContent = '0:00'; $('#dur').textContent = '0:00'; setBar('#progbar', 0);
     $('#plabel').textContent = '지금 재생 중';
     return;
   }
-  $('#plabel').textContent = m.isYouTubeMusic ? 'YouTube Music' : '지금 재생 중';
+  $('#plabel').textContent = m.isPreferred ? pname : '지금 재생 중';
   $('#title').textContent = m.title; $('#title').title = m.title;
   $('#artist').textContent = [m.artist, m.album].filter(Boolean).join(' · ') || ' ';
   if (m.thumb) { $('#art').style.backgroundImage = `url(${m.thumb})`; $('#art').innerHTML = ''; }
@@ -124,11 +126,11 @@ function tile({ name, sub, icon, glyph: gl, on, warn, corner, cls, data }) {
 const PANELS = {
   game: { title: '게임', render: renderGames },
   live: { title: '치지직 라이브', render: renderLive },
-  msg: { title: '메신저·커뮤니티', render: () => renderLinks(S.messengers, false) },
+  msg: { title: '메신저·커뮤니티', render: async () => { renderLinks(S.messengers, false); S.messengers = await api().messengers(); if (S.menu === 'msg') renderLinks(S.messengers, false); } },
   file: { title: '내 파일', render: renderFiles },
   dev: { title: '개발 유틸리티', render: renderDev },
   sys: { title: '시스템', render: async () => { renderSys(); S.bin = await api().recycle_info(); if (S.menu === 'sys') renderSys(); } },
-  web: { title: '웹 바로가기', render: () => renderLinks(S.web, true) },
+  web: { title: '웹 바로가기', render: async () => { renderLinks(S.web, true); S.web = await api().web_links(); if (S.menu === 'web') renderLinks(S.web, true); } },
   settings: { title: '설정', render: renderSettings },
 };
 
@@ -271,14 +273,25 @@ async function renderSettings() {
       <div class="row"><button class="switch${s.autostart ? ' on' : ''}" id="s-auto" aria-label="자동 실행"></button><span class="desc" id="s-auto-t">${s.autostart ? '켜짐' : '꺼짐'}</span></div></div>
     <div class="set"><h4>모양</h4>
       <div class="row"><label>테마</label><div class="seg" id="s-theme" style="flex:none;width:200px"><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
+      <div class="row"><label>글꼴</label><div class="seg" id="s-font" style="flex:none;width:300px"><button data-v="pretendard" style="font-family:Pretendard">Pretendard</button><button data-v="suit" style="font-family:SUIT">SUIT</button><button data-v="system">Windows 기본</button></div></div>
+      <div class="row"><label>숫자 글꼴</label><div class="seg" id="s-num" style="flex:none;width:300px"><button data-v="rajdhani" style="font-family:Rajdhani;font-size:13px">Rajdhani 0123</button><button data-v="body">본문 글꼴과 같게</button></div></div>
       <div class="row"><label>왼쪽 패널</label><input type="range" id="s-pa" min="0.2" max="1" step="0.05" value="${op.panel ?? 0.7}"><span class="val" id="s-pa-v"></span></div>
       <div class="row"><label>오른쪽 패널</label><input type="range" id="s-ga" min="0.1" max="1" step="0.05" value="${op.glass ?? 0.4}"><span class="val" id="s-ga-v"></span></div>
       <div class="desc">숫자가 낮을수록 배경화면이 더 비쳐 보여요. 시계 부분을 끌면 HUD 위치를 옮길 수 있어요.</div></div>
     <div class="set"><h4>소리 출력 버튼</h4><div class="desc">왼쪽 위 두 버튼에 연결할 출력 장치예요. '사용 안 함' 장치도 고르면 자동으로 켜져요.</div>
       ${favRow(0)}${favRow(1)}</div>
+    <div class="set"><h4>음악 플레이어</h4><div class="desc">왼쪽 아래 플레이어가 먼저 보여 줄 앱이에요. 버튼을 누르면 이 앱이 열려요.</div>
+      <div class="row"><label>플레이어</label><select id="s-player" style="flex:none;min-width:220px">
+        ${s.players.map(p => `<option value="${p.id}"${s.player === p.id ? ' selected' : ''}>${esc(p.name)}${p.installed ? '' : ' (웹)'}</option>`).join('')}
+        <option value="custom"${s.player === 'custom' ? ' selected' : ''}>직접 고르기…</option>
+      </select></div>
+      <div class="row" id="s-custom-row"${s.player === 'custom' ? '' : ' hidden'}><label>앱</label>
+        <select id="s-custom"><option value="">${s.player_custom.target ? esc(s.player_custom.name) : '불러오는 중…'}</option></select></div></div>
+    <div class="set"><h4>왼쪽 메뉴 순서</h4><div class="desc">화살표로 순서를 바꾸고, 스위치로 메뉴를 숨길 수 있어요.</div>
+      <div id="s-menu"></div></div>
     <div class="set"><h4>마우스 배터리</h4><div class="desc">Logitech(G HUB 필요)과 Razer(Synapse 없어도 됨) 무선 마우스를 지원해요. 바꾼 뒤에는 HUD를 다시 켜야 적용돼요.</div>
       <div class="row"><label>읽는 곳</label><select id="s-mouse" style="flex:none;min-width:220px">
-        ${[['auto', '자동 (Logitech / Razer)'], ['ghub', 'Logitech G HUB 만'], ['razer', 'Razer 만'], ['off', '표시 안 함']].map(([v, t]) => `<option value="${v}"${s.mouse_provider === v ? ' selected' : ''}>${t}</option>`).join('')}
+        ${[['auto', '자동 (Logitech / Razer)'], ['ghub', 'Logitech · G HUB 로'], ['logitech', 'Logitech · 수신기에서 직접'], ['razer', 'Razer'], ['off', '표시 안 함']].map(([v, t]) => `<option value="${v}"${s.mouse_provider === v ? ' selected' : ''}>${t}</option>`).join('')}
       </select></div></div>
     <div class="set"><h4>키보드 버튼</h4><div class="desc">키보드 아이콘을 누르면 열 주소예요. 비워 두면 버튼이 숨겨져요.</div>
       <div class="row"><input type="text" id="s-kb" value="${esc(s.keyboard_url)}" placeholder="https://"></div></div>
@@ -293,6 +306,23 @@ async function renderSettings() {
       <textarea id="s-dclose">${esc(s.dev_close)}</textarea></div>
     <div class="row" style="gap:6px;margin:4px 0 8px"><button class="btn" id="s-save">저장</button><button class="btn ghost" id="s-cfg">설정 파일 열기</button><button class="btn ghost" id="s-log">로그 열기</button><span class="hint" id="s-msg" style="margin:0"></span></div>`;
   setSeg('s-theme', theme);
+  // 글꼴: 누르면 바로 미리 적용, 저장하면 유지
+  const font = { body: s.font.body || 'pretendard', num: s.font.num || 'rajdhani' };
+  setSeg('s-font', font.body); setSeg('s-num', font.num);
+  $$('#s-font button').forEach(b => b.onclick = () => { setSeg('s-font', b.dataset.v); applyFont({ ...curFont(), body: b.dataset.v }); });
+  $$('#s-num button').forEach(b => b.onclick = () => { setSeg('s-num', b.dataset.v); applyFont({ ...curFont(), num: b.dataset.v }); });
+  // 음악 플레이어: '직접 고르기' 를 고르면 시작 메뉴 앱 목록을 불러온다
+  const loadCustom = async () => {
+    const apps = await api().list_start_apps();
+    const cur = s.player_custom.target || '';
+    $('#s-custom').innerHTML = `<option value="">앱을 고르세요</option>` +
+      apps.map(a => `<option value="${esc(a.target)}"${a.target === cur ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
+  };
+  if (s.player === 'custom') loadCustom();
+  $('#s-player').onchange = () => { const c = $('#s-player').value === 'custom'; $('#s-custom-row').hidden = !c; if (c) loadCustom(); };
+  // 메뉴 순서
+  S.menuDraft = JSON.parse(JSON.stringify(s.menu));
+  renderMenuOrder();
   const showOp = () => { $('#s-pa-v').textContent = Math.round($('#s-pa').value * 100) + '%'; $('#s-ga-v').textContent = Math.round($('#s-ga').value * 100) + '%'; };
   showOp();
   const previewOp = () => { document.body.style.setProperty('--pa', $('#s-pa').value); document.body.style.setProperty('--ga', $('#s-ga').value); showOp(); };
@@ -314,6 +344,45 @@ async function renderSettings() {
   $('#s-save').onclick = async () => { await saveSettingsForm(); $('#s-msg').textContent = '저장했어요'; notify('설정을 저장했어요'); };
 }
 
+const MENU_NAMES = { game: '게임', live: '치지직 라이브', msg: '메신저·커뮤니티', file: '내 파일', dev: '개발 유틸리티', sys: '시스템', web: '웹 바로가기' };
+function renderMenuOrder() {
+  const list = S.menuDraft;
+  $('#s-menu').innerHTML = list.map((m, i) => `<div class="mo${m.show ? '' : ' off'}">
+      <span class="nm">${MENU_NAMES[m.key] || m.key}</span>
+      <button class="icon-btn" data-mv="${i}" data-d="-1" title="위로"${i === 0 ? ' disabled' : ''}>${glyph('E70E')}</button>
+      <button class="icon-btn" data-mv="${i}" data-d="1" title="아래로"${i === list.length - 1 ? ' disabled' : ''}>${glyph('E70D')}</button>
+      <button class="switch${m.show ? ' on' : ''}" data-show="${i}" aria-label="메뉴 표시"></button></div>`).join('');
+  $$('#s-menu [data-mv]').forEach(b => b.onclick = () => {
+    const i = Number(b.dataset.mv), j = i + Number(b.dataset.d);
+    [list[i], list[j]] = [list[j], list[i]]; renderMenuOrder(); applyMenu(list);
+  });
+  $$('#s-menu [data-show]').forEach(b => b.onclick = () => {
+    const m = list[Number(b.dataset.show)];
+    if (m.show && list.filter(x => x.show).length === 1) { notify('메뉴를 하나는 남겨 두어야 해요'); return; }
+    m.show = !m.show; renderMenuOrder(); applyMenu(list);
+  });
+}
+
+function applyMenu(menu) {
+  const box = $('#menu');
+  menu.forEach(m => { const el = $(`.mi[data-k="${m.key}"]`, box); if (el) { box.appendChild(el); el.hidden = !m.show; } });
+}
+
+function applyFont(f) {
+  document.body.dataset.font = (f && f.body) || 'pretendard';
+  document.body.dataset.num = (f && f.num) || 'rajdhani';
+}
+function curFont() {
+  return { body: document.body.dataset.font || 'pretendard', num: document.body.dataset.num || 'rajdhani' };
+}
+
+function setPlayer(p) {
+  S.player = p;
+  $('#ytname').textContent = p.id === 'any' ? '음악 앱' : p.name;
+  $('#yticon').innerHTML = p.icon ? `<img src="${p.icon}" alt="">` : glyph('E8D6');
+  renderMedia();
+}
+
 async function saveSettingsForm() {
   const s = S.settings; if (!s || !$('#s-save')) return;
   const theme = document.body.classList.contains('dark') ? 'dark' : 'light';
@@ -323,7 +392,10 @@ async function saveSettingsForm() {
   await api().save_settings({
     opacity, favorites, keyboard_url: $('#s-kb').value, projects_dir: $('#s-proj').value, mouse_provider: $('#s-mouse').value,
     game_close: $('#s-gclose').value, dev_close: $('#s-dclose').value, wsl_shutdown: $('#s-wsl').classList.contains('on'),
+    menu: S.menuDraft, player: $('#s-player').value, font: curFont(),
+    player_custom: { target: $('#s-custom').value, name: $('#s-custom').selectedOptions[0] ? $('#s-custom').selectedOptions[0].textContent : '' },
   });
+  setPlayer(await api().player());
   S.opacity = opacity; S.favs = favorites; renderAudioButtons(); pollStatus();
   $('#kb').hidden = !$('#s-kb').value.trim();
 }
@@ -338,7 +410,7 @@ function bindEvents() {
   };
   $('#mouse').onclick = async () => { if (!(await api().open_mouse_app())) notify('마우스 프로그램(G HUB / Razer Synapse)을 찾지 못했어요'); };
   $('#kb').onclick = () => api().open_keyboard();
-  $('#yt').onclick = () => api().open_ytmusic();
+  $('#yt').onclick = async () => { if (!(await api().open_player())) notify('설정에서 음악 앱을 골라 주세요'); };
 
   $$('#mod button').forEach(b => b.onclick = async () => {
     if (b.classList.contains('on') || S.busy.mod) return;
@@ -437,9 +509,12 @@ window.addEventListener('pywebviewready', async () => {
   bindEvents();
   tickClock(); setInterval(tickClock, 1000);
   const d = await api().init();
-  S.opacity = d.opacity; applyTheme(d.theme, d.opacity);
+  S.opacity = d.opacity; applyTheme(d.theme, d.opacity); applyFont(d.font);
   S.games = d.games; S.messengers = d.messengers; S.web = d.web; S.favs = d.audioFavs;
   $('#kb').hidden = !d.hasKeyboard;
+  if (d.kbIcon) $('#kbicon').innerHTML = `<img src="${d.kbIcon}" alt="">`;
+  if (d.chzzkIcon) $('#liveicon').innerHTML = `<img src="${d.chzzkIcon}" alt="">`;
+  applyMenu(d.menu); setPlayer(d.player);
   $('#gcnt').textContent = S.games.length;
   renderAudioButtons(); setSeg('snd', d.audio); setSeg('mod', d.mode);
   pollStatus(); setInterval(pollStatus, 2000);

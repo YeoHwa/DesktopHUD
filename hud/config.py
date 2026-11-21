@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 APP_NAME = "DesktopHUD"
-VERSION = "1.0.1"
+VERSION = "1.0.3"
 FROZEN = getattr(sys, "frozen", False)
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 WEB_DIR = APP_DIR / "web"
@@ -33,13 +33,14 @@ _lock = threading.RLock()
 DEFAULT_CONFIG = {
     "window": {"x": 24, "y": 24},
     "theme": "light",
+    "font": {"body": "pretendard", "num": "rajdhani"},   # body: pretendard / suit / system,  num: rajdhani / body
     "opacity": {"light": {"panel": 0.70, "glass": 0.40}, "dark": {"panel": 0.62, "glass": 0.45}},
     "keyboard_url": "",
     "ghub_exe": "",
     "razer_app": "",
     "mouse": {"provider": "auto"},   # auto / ghub / razer / off
-    "youtube_music_app": "https://music.youtube.com/",
-    "youtube_music_match": "",
+    "media": {"player": "youtube_music", "custom": {}},   # youtube_music / spotify / apple_music / melon / genie / any / custom
+    "menu": [{"key": k, "show": True} for k in ("game", "live", "msg", "file", "dev", "sys", "web")],
     "audio": {"favorites": []},
     "modes": {
         "game": {"close": ["Docker Desktop", "com.docker.backend", "com.docker.build", "com.docker.service"],
@@ -88,7 +89,6 @@ def _first_run_defaults() -> dict:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     cfg["ghub_exe"] = detect.ghub_exe()
     cfg["razer_app"] = detect.razer_app()
-    cfg["youtube_music_app"], cfg["youtube_music_match"] = detect.youtube_music()
     cfg["wallpaper_engine_exe"] = detect.wallpaper_engine_exe()
     desk, cli = detect.docker_paths()
     cfg["docker"] = {"desktop": desk, "cli": cli}

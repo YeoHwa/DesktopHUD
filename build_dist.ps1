@@ -88,6 +88,7 @@ Desktop HUD $ver
 Write-Host '4/4 압축'
 $zip = Join-Path $root "dist\$name.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path $out -DestinationPath $zip -CompressionLevel Optimal
+# Compress-Archive 는 백신이 방금 복사된 DLL 을 검사하는 동안 '사용 중' 오류로 실패하므로 Python zipfile 사용
+& "$PythonHome\python.exe" -c "import zipfile,os,sys; src,dst=sys.argv[1],sys.argv[2]; base=os.path.dirname(src); z=zipfile.ZipFile(dst,'w',zipfile.ZIP_DEFLATED,compresslevel=9); [z.write(os.path.join(r,f), os.path.relpath(os.path.join(r,f), base)) for r,_,fs in os.walk(src) for f in fs]; z.close()" $out $zip
 "{0}  ({1:N1} MB, 압축 전 {2:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB), ((Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
 

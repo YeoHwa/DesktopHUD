@@ -1,5 +1,13 @@
+/* ===== 글꼴 (모두 SIL OFL 1.1, 라이선스는 web/fonts 폴더) ===== */
+@font-face { font-family: "Pretendard"; src: url("fonts/PretendardVariable.woff2") format("woff2-variations"); font-weight: 45 920; font-display: swap; }
+@font-face { font-family: "SUIT"; src: url("fonts/SUIT-Variable.woff2") format("woff2-variations"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Rajdhani"; src: url("fonts/Rajdhani-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Rajdhani"; src: url("fonts/Rajdhani-SemiBold.ttf") format("truetype"); font-weight: 600 700; font-display: swap; }
+
 /* ===== 테마 변수 ===== */
 :root {
+  --font-body: "Pretendard", "Segoe UI Variable Text", "Malgun Gothic", sans-serif;
+  --font-num: "Rajdhani", var(--font-body);
   --sky: #0EA5E9;
   --sky-2: #38BDF8;
   --on-sky: #FFFFFF;
@@ -53,13 +61,20 @@ body.dark {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 html, body { background: transparent; overflow: hidden; height: 100%; }
+body[data-font="suit"] { --font-body: "SUIT", "Segoe UI Variable Text", "Malgun Gothic", sans-serif; }
+body[data-font="system"] { --font-body: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif; }
+body[data-num="body"] { --font-num: var(--font-body); }
 body {
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif;
+  font-family: var(--font-body);
   font-size: 13px; line-height: 1.4; color: var(--ink);
   user-select: none; -webkit-user-select: none;
 }
 button { all: unset; cursor: pointer; box-sizing: border-box; }
 input { font: inherit; color: inherit; }
+/* 숫자 글꼴: 시계, 배터리, CPU/GPU/RAM, 재생 시간, 음량, 개수 */
+#clock, #bat, #bath, .stats b, #cur, #dur, #volv, .mi .cnt, #livecnt, .drv span { font-family: var(--font-num); }
+body:not([data-num="body"]) #clock { font-size: 38px; font-weight: 600; letter-spacing: .03em; }
+body:not([data-num="body"]) :is(#bat, .stats b) { font-size: 1.12em; }
 .g { font-family: var(--glyph); font-style: normal; line-height: 1; color: var(--sky); display: inline-block; }
 
 #app { display: flex; gap: 12px; padding: 8px; height: 100vh; align-items: stretch; }
@@ -230,3 +245,18 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
 .switch.on { background: var(--sky); }
 .switch.on::after { left: 21px; background: var(--on-sky); }
 .web-del { margin-left: auto; }
+
+/* 공식 로고 (프로그램/사이트 아이콘) */
+.mic { width: 20px; display: inline-flex; justify-content: center; }
+.mic img { width: 18px; height: 18px; object-fit: contain; }
+#yticon { display: inline-flex; }
+#yticon img { width: 14px; height: 14px; object-fit: contain; }
+#kbicon img { width: 24px; height: 24px; object-fit: contain; }
+.drv-row { cursor: pointer; }
+
+/* 설정: 메뉴 순서 */
+.mo { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--softer); margin-top: 4px; }
+.mo .nm { flex: 1; font-size: 12px; }
+.mo .g { font-size: 14px; }
+.mo.off .nm { color: var(--mut); text-decoration: line-through; }
+.mo .icon-btn[disabled] { opacity: .3; pointer-events: none; }

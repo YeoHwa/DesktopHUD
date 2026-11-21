@@ -28,6 +28,11 @@ class Media:
         self._thumb = ""
         threading.Thread(target=self.loop.run_forever, daemon=True, name="media").start()
 
+    def set_prefer(self, match: str):
+        """설정에서 플레이어를 바꿨을 때."""
+        self.prefer = (match or "").lower()
+        self._thumb_key = None
+
     def _call(self, coro, timeout=4):
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
@@ -78,7 +83,7 @@ class Media:
             "position": min(pos, end) if end else pos,
             "duration": end,
             "thumb": self._thumb,
-            "isYouTubeMusic": bool(self.prefer) and self.prefer in app.lower(),
+            "isPreferred": bool(self.prefer) and self.prefer in app.lower(),
         }
 
     def info(self):

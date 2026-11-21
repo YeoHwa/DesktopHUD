@@ -5,7 +5,7 @@
 <title>Desktop HUD</title>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-font="pretendard" data-num="rajdhani">
 <div id="app">
   <div id="left">
     <!-- 상태 패널 -->
@@ -28,7 +28,7 @@
           <span class="mouse-top"><i class="g">&#xE962;</i><span class="label" id="mname">마우스</span><i class="g" id="chg" hidden>&#xE945;</i><b id="bat">--%</b></span>
           <span class="mouse-top"><span class="bar" id="batbar"><i style="width:0"></i></span><span class="label" id="bath"></span></span>
         </button>
-        <button id="kb" title="키보드 설정 열기"><i class="g" style="font-size:20px">&#xE765;</i><i class="g" style="font-size:10px;color:var(--mut)">&#xE8A7;</i></button>
+        <button id="kb" title="키보드 설정 열기"><span id="kbicon"><i class="g" style="font-size:20px">&#xE765;</i></span><i class="g" style="font-size:10px;color:var(--mut)">&#xE8A7;</i></button>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px">
         <div class="seg" id="snd"></div>
@@ -47,7 +47,7 @@
     <!-- 메뉴 -->
     <div class="pn" id="menu">
       <button class="mi" data-k="game"><i class="g">&#xE7FC;</i>게임<span class="cnt" id="gcnt"></span><i class="g cv">&#xE76C;</i></button>
-      <button class="mi" data-k="live"><i class="g">&#xE93E;</i>치지직 라이브<span class="lv" id="livecnt" hidden></span><i class="g cv">&#xE76C;</i></button>
+      <button class="mi" data-k="live"><span class="mic" id="liveicon"><i class="g">&#xE93E;</i></span>치지직 라이브<span class="lv" id="livecnt" hidden></span><i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="msg"><i class="g">&#xE8BD;</i>메신저·커뮤니티<i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="file"><i class="g">&#xE8B7;</i>내 파일<i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="dev"><i class="g">&#xE943;</i>개발 유틸리티<i class="g cv">&#xE76C;</i></button>
@@ -58,7 +58,7 @@
     <!-- 음악 -->
     <div class="pn" id="player">
       <div class="pl-head"><span class="label" id="plabel">지금 재생 중</span>
-        <button id="yt" title="YouTube Music 열기"><i class="g">&#xE8D6;</i>YouTube Music</button></div>
+        <button id="yt" title="음악 앱 열기"><span id="yticon"><i class="g">&#xE8D6;</i></span><span id="ytname">YouTube Music</span></button></div>
       <div class="track">
         <div id="art"><i class="g">&#xE8D6;</i></div>
         <div class="track-text"><div id="title">재생 중인 곡이 없어요</div><div id="artist">YouTube Music을 열어 보세요</div></div>

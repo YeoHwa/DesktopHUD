@@ -30,7 +30,7 @@ log.info("시작 시도 v%s (exe=%s)", VERSION, sys.executable)
 
 import webview  # noqa: E402
 
-from hud import audio, desktop, games, media, mode, system  # noqa: E402
+from hud import audio, desktop, games, icons, media, mode, players, system  # noqa: E402
 from hud.chzzk import Chzzk, toast  # noqa: E402
 from hud.mouse import MouseBattery  # noqa: E402
 from hud.launch import open_target  # noqa: E402
@@ -51,7 +51,7 @@ class Api:
         self._height = desktop.fit_height(cfg["window"]["x"], cfg["window"]["y"])
         self._move_timer = None
         self._battery = MouseBattery()
-        self._media = media.Media(cfg.get("youtube_music_match", ""))
+        self._media = media.Media(players.current()["match"])
         self._chzzk = Chzzk()
         self._games = []
         self._games_lock = threading.Lock()
@@ -62,16 +62,39 @@ class Api:
         return {
             "version": VERSION,
             "games": self.games(False),
-            "messengers": system.messengers(),
-            "web": system.web_links(),
+            "messengers": system.messengers(wait=0),
+            "web": system.web_links(wait=0),
             "mode": mode.get_mode(),
             "audioFavs": audio.favorites(),
             "audio": audio.default_id(),
             "hasKeyboard": bool(cfg.get("keyboard_url")),
+            "kbIcon": icons.favicon_data_url(cfg.get("keyboard_url", ""), wait=2),
+            "chzzkIcon": icons.favicon_data_url("https://chzzk.naver.com/", wait=2),
+            "player": self.player(),
+            "menu": self._menu(cfg),
             "openPanel": _arg("panel"),
             "theme": _arg("theme", cfg.get("theme", "light")),
             "opacity": cfg.get("opacity", {}),
+            "font": {**cfg.get("font", {}), **({"body": _arg("font")} if _arg("font") else {})},
         }
+
+    @staticmethod
+    def _menu(cfg):
+        """왼쪽 메뉴 순서/표시. 설정에 없는 새 메뉴는 끝에 붙인다."""
+        keys = ["game", "live", "msg", "file", "dev", "sys", "web"]
+        menu = [m for m in cfg.get("menu", []) if m.get("key") in keys]
+        menu += [{"key": k, "show": True} for k in keys if k not in {m["key"] for m in menu}]
+        return menu
+
+    def player(self):
+        p = players.current()
+        return {"id": p["id"], "name": p["name"], "icon": icons.official_icon({"target": p["target"]}, wait=2) if p["target"] else ""}
+
+    def messengers(self):
+        return system.messengers()
+
+    def web_links(self):
+        return system.web_links()
 
     def games(self, rescan=True):
         with self._games_lock:
@@ -103,9 +126,6 @@ class Api:
 
     def open_mouse_app(self):
         target = self._battery.app_target()
-        if not target and self._battery.state.get("source") == "Razer":
-            from hud import detect
-            target = detect.razer_app()
         return open_target(target) if target else False
 
     # ---------- 실행 ----------
@@ -168,14 +188,14 @@ class Api:
         cfg = load_config()
         cfg["web"].append({"name": name or url, "target": url, "glyph": "E909"})
         save_config(cfg)
-        return cfg["web"]
+        return system.web_links()
 
     def remove_web(self, index):
         cfg = load_config()
         if 0 <= index < len(cfg["web"]):
             cfg["web"].pop(index)
             save_config(cfg)
-        return cfg["web"]
+        return system.web_links()
 
     # ---------- 음악 ----------
     def media(self):
@@ -190,8 +210,12 @@ class Api:
     def toggle_mute(self):
         return media.toggle_mute()
 
-    def open_ytmusic(self):
-        return open_target(load_config().get("youtube_music_app") or "https://music.youtube.com/")
+    def open_player(self):
+        p = players.current()
+        return open_target(p["target"]) if p["target"] else False
+
+    def list_start_apps(self):
+        return players.start_apps()
 
     # ---------- 치지직 ----------
     def chzzk_list(self):
@@ -232,6 +256,11 @@ class Api:
             "dev_close": "\n".join(cfg["modes"]["dev"].get("close", [])),
             "wsl_shutdown": cfg["modes"]["game"].get("wsl_shutdown", False),
             "mode_script": bool(cfg["modes"]["game"].get("script")),
+            "players": players.choices(),
+            "player": players.current()["id"],
+            "player_custom": cfg.get("media", {}).get("custom", {}),
+            "font": cfg.get("font", {}),
+            "menu": self._menu(cfg),
         }
 
     def save_settings(self, s):
@@ -246,7 +275,7 @@ class Api:
             cfg["keyboard_url"] = s["keyboard_url"].strip()
         if "projects_dir" in s:
             cfg["dev"]["projects_dir"] = s["projects_dir"].strip()
-        if s.get("mouse_provider") in ("auto", "ghub", "razer", "off"):
+        if s.get("mouse_provider") in ("auto", "ghub", "logitech", "razer", "off"):
             cfg.setdefault("mouse", {})["provider"] = s["mouse_provider"]
         if "game_close" in s:
             cfg["modes"]["game"]["close"] = [x.strip() for x in s["game_close"].splitlines() if x.strip()]
@@ -254,7 +283,21 @@ class Api:
             cfg["modes"]["dev"]["close"] = [x.strip() for x in s["dev_close"].splitlines() if x.strip()]
         if "wsl_shutdown" in s:
             cfg["modes"]["game"]["wsl_shutdown"] = bool(s["wsl_shutdown"])
+        if isinstance(s.get("font"), dict):
+            f = s["font"]
+            cfg["font"] = {"body": f.get("body") if f.get("body") in ("pretendard", "suit", "system") else "pretendard",
+                           "num": f.get("num") if f.get("num") in ("rajdhani", "body") else "rajdhani"}
+        if "menu" in s:
+            cfg["menu"] = [{"key": m["key"], "show": bool(m.get("show", True))} for m in s["menu"]]
+        if "player" in s:
+            media_cfg = cfg.setdefault("media", {})
+            media_cfg["player"] = s["player"]
+            if s["player"] == "custom" and s.get("player_custom", {}).get("target"):
+                c = s["player_custom"]
+                media_cfg["custom"] = players.custom_from_app(c.get("name", "앱"), c["target"])
         save_config(cfg)
+        if "player" in s:
+            self._media.set_prefer(players.current()["match"])
         return True
 
     def set_theme(self, theme):

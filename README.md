@@ -83,4 +83,11 @@ web/               HUD 화면 (HTML / CSS / JS)
 
 ## 라이선스
 
-[MIT](LICENSE)
+코드: [MIT](LICENSE)
+
+함께 들어 있는 글꼴 (`web/fonts`, 모두 SIL Open Font License 1.1 — 라이선스 전문은 같은 폴더에 있음)
+- [Pretendard](https://github.com/orioncactus/pretendard) © Kil Hyung-jin
+- [SUIT](https://github.com/sun-typeface/SUIT) © SUNN
+- [Rajdhani](https://fonts.google.com/specimen/Rajdhani) © Indian Type Foundry
+
+프로그램/사이트 로고는 저장소에 포함하지 않고, 실행하는 PC 에서 각 앱·사이트의 아이콘을 가져와 표시합니다.

@@ -10,7 +10,7 @@ from ctypes import wintypes
 import psutil
 
 from .config import load_config, load_state, save_state
-from .icons import icon_data_url
+from .icons import official_icons
 from .launch import NO_WINDOW, open_target
 
 log = logging.getLogger("hud")
@@ -200,19 +200,13 @@ def files():
 
 
 # ---------------- 메신저 / 웹 / 개발 ----------------
-def _with_icon(item):
-    out = dict(item)
-    if not item.get("glyph"):
-        out["icon"] = icon_data_url(item.get("icon") or item["target"])
-    return out
+# 각 항목에는 프로그램/사이트의 공식 아이콘을 붙인다 (못 가져오면 화면에서 기본 그림으로 대신 표시)
+def messengers(wait: float = 4):
+    return official_icons(load_config()["messengers"], wait)
 
 
-def messengers():
-    return [_with_icon(m) for m in load_config()["messengers"]]
-
-
-def web_links():
-    return load_config()["web"]
+def web_links(wait: float = 4):
+    return official_icons(load_config()["web"], wait)
 
 
 def docker_running():
@@ -237,13 +231,15 @@ def dev_items():
         dirs = [e for e in os.scandir(root) if e.is_dir() and not e.name.startswith(".")]
         dirs.sort(key=lambda e: e.stat().st_mtime, reverse=True)
         projects = [{"name": e.name, "target": e.path} for e in dirs[:40]]
+    docker_exe = load_config()["docker"].get("desktop", "")
     tools = []
     for t in cfg["tools"]:
-        t = _with_icon(t) if not t.get("action") else dict(t)
+        t = dict(t)
         if t.get("action") == "docker":
             t["sub"] = "실행 중" if docker_running() else "꺼짐"
+            t["iconTarget"] = docker_exe
         tools.append(t)
-    return {"projects": projects, "tools": tools, "projectsDir": root}
+    return {"projects": projects, "tools": official_icons(tools), "projectsDir": root}
 
 
 def open_project(path: str, terminal=False):
