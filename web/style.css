@@ -292,3 +292,116 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
 .set input[type=number] { border: 1px solid var(--hl); background: var(--input); color: var(--ink); padding: 5px 6px; font: inherit; font-size: 12px; outline: none; }
 .set input[type=number]:focus { border-color: var(--sky); }
 .set .row label { min-width: 104px; }
+
+/* 라이브: 플랫폼 표시, 검색 플랫폼 고르기 */
+.nv { background: var(--sky); color: var(--on-sky); font-size: 10px; padding: 1px 6px; font-weight: 600; }
+.av { position: relative; }
+.av .pf { position: absolute; right: -3px; bottom: -3px; width: 17px; height: 17px; border-radius: 50%; background: var(--pop); padding: 1px; object-fit: contain; box-shadow: 0 0 0 1px var(--hl); }
+.sr.off .av { filter: saturate(.55); opacity: .85; }
+.live-search { margin-top: 0; flex-wrap: wrap; }
+.live-search .plat { flex: none; }
+.live-search .plat button { padding: 7px 10px; }
+.live-search .plat img { width: 14px; height: 14px; object-fit: contain; }
+.live-search input { min-width: 200px; }
+.res-head { display: flex; align-items: center; margin: 6px 0; }
+.res-head .sec { margin: 0; }
+.res-head .icon-btn { margin-left: auto; }
+#results:not(:empty) { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--hl); }
+#streams { margin-top: 12px; }
+
+/* 새로운 유튜브 동영상 */
+.vsec-head { display: flex; align-items: center; gap: 8px; margin: 18px 0 10px; padding-top: 14px; border-top: 2px solid var(--hl); }
+.vsec-title { font-size: 15px; font-weight: 600; }
+.vsec-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
+.vc { position: relative; display: flex; gap: 10px; padding: 8px; background: var(--tile); cursor: pointer; }
+.vc:hover { background: var(--tile-hover); box-shadow: inset 0 -2px 0 var(--sky); }
+.vthumb { position: relative; width: 168px; height: 94px; flex: none; background: var(--soft) center/cover; }
+.vthumb .lv, .vthumb .vbadge { position: absolute; left: 5px; bottom: 5px; }
+.vbadge { background: #FF0033; color: #fff; font-size: 10px; padding: 1px 6px; font-weight: 600; }
+.vinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding-right: 14px; }
+.vtitle { font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.vch { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mut); min-width: 0; }
+.vch span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vav { width: 18px; height: 18px; border-radius: 50%; flex: none; background: var(--soft) center/cover; }
+.vmeta { font-size: 11px; color: var(--mut); margin-top: auto; }
+.vx { position: absolute; top: 4px; right: 4px; padding: 4px; opacity: 0; }
+.vc:hover .vx { opacity: 1; }
+.vx .g { font-size: 10px; color: var(--mut); }
+.vx:hover { background: var(--soft); }
+
+/* 단축키로 맨 앞에 띄웠을 때: 패널 테두리를 조금 더 진하게 */
+body.front .pn { border-color: var(--sky); }
+
+/* 설정: 단축키 입력 단추 */
+.keycap { min-width: 150px; text-align: center; padding: 6px 12px; font-family: var(--font-num), var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: .03em;
+  background: var(--input); border: 1px solid var(--hl); box-shadow: inset 0 -2px 0 var(--hl); }
+.keycap:hover { border-color: var(--sky); }
+.keycap.rec { border-color: var(--sky); color: var(--sky); animation: keyrec 1s ease-in-out infinite; }
+@keyframes keyrec { 50% { background: var(--soft); } }
+
+/* 고칠 수 있는 바로가기 (메신저 · 웹 · 작업 도구) */
+.tile .hide.show { opacity: 1; }
+.tile.editing { outline: 1px dashed var(--hl); outline-offset: -1px; }
+.tile.editing .sb { color: var(--sky); }
+.tile .mv { position: absolute; left: 4px; top: 4px; display: flex; gap: 2px; }
+.tile .mv span { padding: 3px; }
+.tile .mv span:hover { background: var(--soft); }
+.tile .mv .g { font-size: 10px; color: var(--mut); }
+.grp-head { display: flex; align-items: center; gap: 6px; margin: 16px 0 8px; }
+.grp-head:first-child, #grppick + .grp-head { margin-top: 0; }
+.grp-head .sec { margin: 0; }
+.grp-tools { margin-left: auto; display: flex; gap: 2px; }
+.grp-tools .icon-btn[disabled] { opacity: .3; pointer-events: none; }
+.web-add { margin: 0 0 8px; }
+.addbox { background: var(--tile); border: 1px solid var(--hl); padding: 10px 12px; margin: 8px 0 12px; display: flex; flex-direction: column; gap: 8px; }
+.addbox-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.addbox-head .icon-btn { margin-left: auto; }
+.addbox .atabs { flex: none; }
+.addbox .atabs button { padding: 6px 14px; }
+.addbox .afilter { width: 100%; border: 1px solid var(--hl); background: var(--input); padding: 7px 10px; outline: none; }
+.addbox .afilter:focus { border-color: var(--sky); }
+.alist { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px; max-height: 220px; overflow-y: auto; margin-top: 6px; }
+.alist::-webkit-scrollbar { width: 6px; }
+.alist::-webkit-scrollbar-thumb { background: var(--hl); }
+.arow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px; background: var(--softer); min-width: 0; }
+.arow span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arow .g { font-size: 13px; flex: none; }
+.arow:hover { background: var(--soft); }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.fieldbtn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; background: var(--softer); font-size: 12px; position: relative; }
+.fieldbtn .g { font-size: 22px; }
+.fieldbtn:hover { background: var(--soft); }
+.fieldbtn.used { opacity: .6; }
+.fieldbtn small { font-size: 10px; color: var(--mut); }
+#cinput { border: 1px solid var(--hl); background: var(--input); color: var(--ink); padding: 6px 8px; outline: none; min-width: 200px; }
+#cinput:focus { border-color: var(--sky); }
+.mi .mtx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.addbox .atabs button { white-space: nowrap; }
+
+/* 시스템: 상태 카드 + 큰 버튼 카드 */
+.stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.stc { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--tile); min-width: 0; }
+.stc .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stc b { font-family: var(--font-num); font-size: 24px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stc .bar { flex: none; margin-top: 2px; }
+.stats-row + .sec { margin-top: 18px; }
+.wgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wcard { display: flex; align-items: center; gap: 14px; padding: 16px 16px; min-height: 72px; background: var(--tile); position: relative; }
+.wcard > .g { font-size: 24px; width: 44px; height: 44px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--soft); }
+.wcard .wtx { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wcard b { font-size: 14px; font-weight: 600; }
+.wcard small { font-size: 11px; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wcard:hover { background: var(--tile-hover); box-shadow: inset 0 -2px 0 var(--sky); }
+.wcard:active { transform: scale(.99); }
+.wcard.on { background: var(--soft); box-shadow: inset 0 -2px 0 var(--sky); }
+.wcard.on > .g { background: var(--sky); color: var(--on-sky); }
+.wcard.warn small { color: var(--danger); font-weight: 600; }
+.wcard.warn > .g { color: var(--danger); }
+
+/* 라이브 '전체'에서 YouTube 채널을 숨겼을 때 안내 줄 */
+.yt-note { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; margin-bottom: 8px; background: var(--softer); border: 1px dashed var(--hl); font-size: 12px; color: var(--mut); }
+.yt-note img { width: 16px; height: 16px; object-fit: contain; }
+.yt-note b { margin-left: auto; color: var(--sky); font-weight: 600; white-space: nowrap; }
+.yt-note:hover { background: var(--soft); }
+.vsec-tools { flex-wrap: wrap; justify-content: flex-end; }

@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 APP_NAME = "DesktopHUD"
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 FROZEN = getattr(sys, "frozen", False)
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 WEB_DIR = APP_DIR / "web"
@@ -46,9 +46,12 @@ DEFAULT_CONFIG = {
     "wallpaper_engine_exe": "",
     "docker": {"desktop": "", "cli": ""},
     "games": {"hidden": ["steam:431960", "steam:228980"], "extra": [], "rename": {}},
-    "streamers": [],
-    "chzzk_poll_seconds": 60,
-    "messengers": [],
+    "streamers": [],          # 라이브 알림: [{platform: chzzk/soop/youtube/twitch, id, name, image, notify}]
+    "chzzk_poll_seconds": 60,  # 치지직 · SOOP · Twitch 방송 확인 간격 (YouTube 는 3분)
+    "youtube": {"hide_shorts": False, "hide_channels": True},   # hide_channels: 라이브 '전체'에서 YouTube 채널 줄 숨기기
+    "hotkey": "Ctrl+Alt+H",    # HUD 를 맨 앞으로 띄우는 단축키 (빈 값이면 끔)
+    "messengers": [],           # 메신저·커뮤니티 (처음 실행 때 설치된 메신저만 자동으로)
+    "messengers_hidden": [],    # 사용자가 지운 자동 감지 메신저 (다시 넣지 않음)
     "files": [
         {"name": "다운로드", "target": r"%USERPROFILE%\Downloads", "glyph": "E896", "stat": "count"},
         {"name": "스크린샷", "target": r"%USERPROFILE%\Pictures\Screenshots", "glyph": "E722", "stat": "today"},
@@ -61,9 +64,9 @@ DEFAULT_CONFIG = {
     "drives": [],
     "dev": {"projects_dir": "", "tools": []},
     "web": [
-        {"name": "치지직", "target": "https://chzzk.naver.com/", "glyph": "E93E"},
-        {"name": "YouTube", "target": "https://www.youtube.com/", "glyph": "E714"},
         {"name": "네이버", "target": "https://www.naver.com/", "glyph": "E909"},
+        {"name": "Google", "target": "https://www.google.com/", "glyph": "E909"},
+        {"name": "YouTube", "target": "https://www.youtube.com/", "glyph": "E714"},
         {"name": "나무위키", "target": "https://namu.wiki/", "glyph": "E82D"},
     ],
 }
@@ -89,37 +92,13 @@ def _first_run_defaults() -> dict:
     desk, cli = detect.docker_paths()
     cfg["docker"] = {"desktop": desk, "cli": cli}
 
-    msgs = []
-    discord = os.path.expandvars(r"%LOCALAPPDATA%\Discord\Update.exe")
-    if os.path.isfile(discord):
-        msgs.append({"name": "Discord", "target": discord, "args": ["--processStart", "Discord.exe"],
-                     "icon": os.path.expandvars(r"%LOCALAPPDATA%\Discord\app.ico")})
-    kakao = detect.kakaotalk_exe()
-    if kakao:
-        msgs.append({"name": "카카오톡", "target": kakao})
-    for name in ("Telegram Desktop", "Telegram", "LINE", "Slack", "Microsoft Teams"):
-        app = detect.find_start_app(name)
-        if app:
-            msgs.append({"name": name, "target": app, "glyph": "E8BD"})
-    msgs.append({"name": "치지직", "target": "https://chzzk.naver.com/", "glyph": "E93E", "sub": "웹"})
-    cfg["messengers"] = msgs
-
-    tools = [{"name": "터미널", "target": detect.terminal_cmd(), "glyph": "E756"}]
-    code = detect.vscode_exe()
-    if code:
-        tools.append({"name": "VS Code", "target": code})
-    if desk:
-        tools.append({"name": "Docker", "action": "docker", "glyph": "E7B8"})
-    for name, glyph in (("Claude", "E945"), ("ChatGPT", "E99A"), ("Codex", "E99A")):
-        app = detect.find_start_app(name)
-        if app:
-            tools.append({"name": name, "target": app, "glyph": glyph})
-    tools.append({"name": "GitHub", "target": "https://github.com/", "glyph": "E909", "sub": "웹"})
-    cfg["dev"]["tools"] = tools
+    from . import catalog, links
+    cfg["messengers"] = catalog.detect_messengers()
     for cand in (r"%USERPROFILE%\source\repos", r"%USERPROFILE%\Projects", r"%USERPROFILE%\Documents\GitHub"):
         if os.path.isdir(os.path.expandvars(cand)):
             cfg["dev"]["projects_dir"] = cand
             break
+    cfg["workspace"] = links.default_workspace(cfg["dev"]["projects_dir"])
     return cfg
 
 

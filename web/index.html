@@ -44,10 +44,10 @@
     <!-- 메뉴 -->
     <div class="pn" id="menu">
       <button class="mi" data-k="game"><i class="g">&#xE7FC;</i>게임<span class="cnt" id="gcnt"></span><i class="g cv">&#xE76C;</i></button>
-      <button class="mi" data-k="live"><span class="mic" id="liveicon"><i class="g">&#xE93E;</i></span>치지직 라이브<span class="lv" id="livecnt" hidden></span><i class="g cv">&#xE76C;</i></button>
+      <button class="mi" data-k="live"><span class="mic" id="liveicon"><i class="g">&#xE93E;</i></span>라이브<span class="lv" id="livecnt" hidden></span><span class="nv" id="vidcnt" hidden></span><i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="msg"><i class="g">&#xE8BD;</i>메신저·커뮤니티<i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="file"><i class="g">&#xE8B7;</i>내 파일<i class="g cv">&#xE76C;</i></button>
-      <button class="mi" data-k="dev"><i class="g">&#xE943;</i>개발 유틸리티<i class="g cv">&#xE76C;</i></button>
+      <button class="mi" data-k="dev"><i class="g">&#xE821;</i><span class="mtx">작업 도구</span><i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="sys"><i class="g">&#xE9E9;</i>시스템<i class="g cv">&#xE76C;</i></button>
       <button class="mi" data-k="web"><i class="g">&#xE909;</i>웹 바로가기<i class="g cv">&#xE76C;</i></button>
     </div>
@@ -89,7 +89,7 @@
     <div id="body"></div>
   </div>
 </div>
-<div id="confirm" hidden><span id="cmsg"></span><button class="btn" id="cyes">확인</button><button class="btn ghost" id="cno">취소</button></div>
+<div id="confirm" hidden><span id="cmsg"></span><input id="cinput" type="text" hidden><button class="btn" id="cyes">확인</button><button class="btn ghost" id="cno">취소</button></div>
 <div id="toast" hidden></div>
 <script src="app.js"></script>
 </body>

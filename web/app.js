@@ -7,7 +7,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fmtTime = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
-const S = { menu: null, games: [], gameFilter: '전체', messengers: [], web: [], media: null, mediaAt: 0, volDrag: false, busy: {}, favs: [] };
+const S = { menu: null, games: [], gameFilter: '전체', messengers: [], web: [], links: {}, edit: false, media: null, mediaAt: 0, volDrag: false, busy: {}, favs: [] };
 
 function setBar(id, pct, low) {
   const el = typeof id === 'string' ? $(id) : id;
@@ -52,6 +52,7 @@ async function pollStatus() {
   try {
     const st = await api().status();
     const s = st.stats;
+    S.stats = s;
     $('#cpu').textContent = `${s.cpu}%`; setBar('#cpub', s.cpu);
     $('#gpu').textContent = s.gpu == null ? '-' : `${s.gpu}%`; setBar('#gpub', s.gpu);
     $('#ram').textContent = `${s.ramUsed}G`; setBar('#ramb', s.ramPct, s.ramPct > 90);
@@ -78,8 +79,9 @@ async function pollStatus() {
       $('#volbtn').innerHTML = glyph(st.volume.muted ? 'E74F' : 'E767');
     }
     const lc = $('#livecnt'); lc.hidden = !st.live; lc.textContent = `${st.live} LIVE`;
+    const vc = $('#vidcnt'); vc.hidden = !st.newVideos; vc.textContent = `새 영상 ${st.newVideos}`;
     S.quick = st.quick;
-    if (S.menu === 'sys') renderSys();
+    if (S.menu === 'sys') { S.sysov = await api().sys_overview(); renderSys(); }
   } catch (e) { console.error(e); }
 }
 
@@ -125,12 +127,12 @@ function tile({ name, sub, icon, glyph: gl, on, warn, corner, cls, data }) {
 /* ---------------- 오른쪽 패널 ---------------- */
 const PANELS = {
   game: { title: '게임', render: renderGames },
-  live: { title: '치지직 라이브', render: renderLive },
-  msg: { title: '메신저·커뮤니티', render: async () => { renderLinks(S.messengers, false); S.messengers = await api().messengers(); if (S.menu === 'msg') renderLinks(S.messengers, false); } },
+  live: { title: '라이브 바로가기', render: renderLive },
+  msg: { title: '메신저·커뮤니티', render: renderMsg },
   file: { title: '내 파일', render: renderFiles },
-  dev: { title: '개발 유틸리티', render: renderDev },
-  sys: { title: '시스템', render: async () => { renderSys(); S.bin = await api().recycle_info(); if (S.menu === 'sys') renderSys(); } },
-  web: { title: '웹 바로가기', render: async () => { renderLinks(S.web, true); S.web = await api().web_links(); if (S.menu === 'web') renderLinks(S.web, true); } },
+  dev: { title: '작업 도구', render: renderWs },
+  sys: { title: '시스템', render: async () => { S.sysHtml = null; renderSys(); [S.bin, S.sysov] = await Promise.all([api().recycle_info(), api().sys_overview()]); if (S.menu === 'sys') renderSys(); } },
+  web: { title: '웹 바로가기', render: renderWeb },
   settings: { title: '설정', render: renderSettings },
 };
 
@@ -152,10 +154,11 @@ async function openMenu(key) {
     $('#app').classList.toggle('flip', !!(r && r.flip));
     R.classList.remove('enter'); void R.offsetWidth; R.classList.add('enter');
   }
+  if (S.menu !== key) S.edit = false;
   S.menu = key;
   const mi = $(`.mi[data-k="${key}"]`); if (mi) mi.classList.add('on');
   R.hidden = false;
-  $('#rt').textContent = PANELS[key].title; $('#rs').textContent = ''; $('#chips').innerHTML = '';
+  $('#rt').textContent = key === 'dev' ? (S.wsTitle || PANELS.dev.title) : PANELS[key].title; $('#rs').textContent = ''; $('#chips').innerHTML = '';
   $('#body').innerHTML = '<div class="empty">불러오는 중…</div>';
   PANELS[key].render();
 }
@@ -172,53 +175,333 @@ function renderGames() {
     ${list.length ? '' : '<div class="empty">설치된 게임을 찾지 못했어요. "게임 추가"로 직접 넣을 수 있어요.</div>'}`;
 }
 
-async function renderLive() {
-  const list = await api().chzzk_list();
-  if (S.menu !== 'live') return;
-  const live = list.filter(s => s.live).length;
-  $('#rs').textContent = `방송 중 ${live}명 · 등록 ${list.length}명`;
-  const rows = list.map(s => {
-    const sub = s.live ? `${s.title} · ${s.category}` : (s.checked ? '방송 꺼짐' : '확인 중…');
-    return `<div class="sr">
-      <div class="av${s.live ? ' live' : ''}" style="${s.image ? `background-image:url('${esc(s.image)}')` : ''}">${s.image ? '' : glyph('E77B')}</div>
-      <div class="sr-text"><div class="sr-top">${s.live ? '<span class="lv">LIVE</span>' : ''}<b>${esc(s.name)}</b>${s.live ? `<span class="label">${Number(s.viewers).toLocaleString()}명</span>` : ''}</div>
-      <div class="sr-sub" title="${esc(sub)}">${esc(sub)}</div></div>
-      <button class="icon-btn" data-bell="${s.id}" data-on="${s.notify ? 1 : 0}" title="방송 알림 ${s.notify ? '끄기' : '켜기'}">${glyph(s.notify ? 'EA8F' : 'E7ED')}</button>
-      <button class="icon-btn" data-del="${s.id}" title="목록에서 빼기">${glyph('E74D')}</button>
-      ${s.live ? `<button class="btn" data-watch="${s.id}">시청</button>` : ''}
-    </div>`;
-  }).join('') || '<div class="empty">아직 등록한 스트리머가 없어요. 아래에서 검색해 추가하세요.</div>';
-  $('#body').innerHTML = rows + `
-    <div class="search"><input id="q" type="text" placeholder="스트리머 이름으로 검색"><button class="btn" id="qgo">검색</button></div>
+/* ---------------- 라이브 (치지직 · SOOP · YouTube · Twitch) + 새 YouTube 영상 ---------------- */
+const PLATS = ['chzzk', 'soop', 'youtube', 'twitch'];
+const PLAT_HINT = {
+  chzzk: '스트리머 이름으로 검색', soop: '스트리머 이름 또는 아이디로 검색',
+  youtube: '채널 이름, @핸들 또는 채널 주소', twitch: '스트리머 이름 또는 아이디로 검색',
+};
+const platName = p => (S.platforms || {})[p] || p;
+const platBadge = p => S.liveIcons && S.liveIcons[p] ? `<img class="pf" src="${S.liveIcons[p]}" alt="${esc(platName(p))}" title="${esc(platName(p))}">` : '';
+const avatar = (img, live, p) => `<div class="av${live ? ' live' : ''}" style="${img ? `background-image:url('${esc(img)}')` : ''}">${img ? '' : glyph('E77B')}${p ? platBadge(p) : ''}</div>`;
+const fmtCount = n => { n = Number(n) || 0; return n >= 1e8 ? `${+(n / 1e8).toFixed(1)}억` : n >= 1e4 ? `${+(n / 1e4).toFixed(1)}만` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}천` : `${n}`; };
+const ago = ts => {
+  const s = Date.now() / 1000 - ts;
+  if (s < 60) return '방금'; if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+  if (s < 86400) return `${Math.floor(s / 3600)}시간 전`; return `${Math.floor(s / 86400)}일 전`;
+};
+
+function renderLive() {
+  // 검색 칸은 한 번만 그리고, 30초마다 갱신할 때는 목록 부분만 다시 그린다 (입력 중인 검색어가 지워지지 않게)
+  S.livePlat = S.livePlat || 'chzzk';
+  $('#body').innerHTML = `
+    <div class="search live-search">
+      <div class="seg plat" id="lplat">${PLATS.map(p => `<button data-plat="${p}">${S.liveIcons && S.liveIcons[p] ? `<img src="${S.liveIcons[p]}" alt="">` : ''}${esc(platName(p))}</button>`).join('')}</div>
+      <input id="q" type="text"><button class="btn" id="qgo">검색</button></div>
     <div id="results"></div>
-    <div class="hint">1분마다 방송 상태를 확인하고, 방송이 켜지면 Windows 알림을 띄워요.</div>`;
+    <div class="hint">치지직 · SOOP · Twitch 는 1분마다, YouTube 는 3분마다 확인해요. 방송이 켜지거나 새 영상이 올라오면 Windows 알림을 띄워요 (종 모양으로 채널마다 끄기).</div>
+    <div id="streams"><div class="empty">불러오는 중…</div></div>
+    <div id="vsec"></div>`;
+  const setPlat = p => { S.livePlat = p; $$('#lplat button').forEach(b => b.classList.toggle('on', b.dataset.plat === p)); $('#q').placeholder = PLAT_HINT[p]; };
+  setPlat(S.livePlat);
+  $$('#lplat button').forEach(b => b.onclick = () => { setPlat(b.dataset.plat); if ($('#q').value.trim()) go(); else $('#q').focus(); });
   const go = async () => {
-    const q = $('#q').value.trim();
+    const q = $('#q').value.trim(), p = S.livePlat;
     if (!q) { $('#results').innerHTML = '<div class="hint" style="color:var(--danger)">검색어를 입력하세요</div>'; return; }
     $('#results').innerHTML = '<div class="hint">검색 중…</div>';
-    const res = await api().chzzk_search(q);
-    $('#results').innerHTML = res.map(r => `<div class="sr">
-      <div class="av" style="${r.image ? `background-image:url('${esc(r.image)}')` : ''}">${r.image ? '' : glyph('E77B')}</div>
-      <div class="sr-text"><div class="sr-top">${r.live ? '<span class="lv">LIVE</span>' : ''}<b>${esc(r.name)}</b></div><div class="sr-sub">팔로워 ${Number(r.followers).toLocaleString()}명</div></div>
-      <button class="btn" data-add="${r.id}" data-name="${esc(r.name)}" data-img="${esc(r.image)}">추가</button></div>`).join('') || '<div class="hint">검색 결과가 없어요</div>';
+    const res = await api().live_search(p, q);
+    if (S.menu !== 'live' || p !== S.livePlat) return;
+    const added = new Set((S.live?.streamers || []).map(s => `${s.platform}:${s.id}`));
+    $('#results').innerHTML = (res.length ? `<div class="res-head"><span class="sec">${esc(platName(p))} 검색 결과</span><button class="icon-btn" data-rclose="1" title="검색 결과 닫기">${glyph('E711')}</button></div>` : '') +
+      (res.map(r => `<div class="sr">${avatar(r.image, r.live)}
+        <div class="sr-text"><div class="sr-top">${r.live ? '<span class="lv">LIVE</span>' : ''}<b>${esc(r.name)}</b></div><div class="sr-sub">${esc(r.sub || '')}</div></div>
+        ${added.has(`${p}:${r.id}`) ? '<span class="label">추가됨</span>' : `<button class="btn" data-add="${esc(r.id)}" data-p="${p}" data-name="${esc(r.name)}" data-img="${esc(r.image)}">추가</button>`}</div>`).join('')
+        || '<div class="hint">검색 결과가 없어요</div>');
   };
   $('#qgo').onclick = go;
   $('#q').onkeydown = e => { if (e.key === 'Enter') go(); };
   $('#q').oninput = () => { if ($('#results').textContent.includes('검색어를')) $('#results').innerHTML = ''; };
+  refreshLive();
 }
 
-function renderLinks(items, editable) {
-  const del = i => editable ? `<span class="hide" data-webdel="${i}" title="삭제">${glyph('E711')}</span>` : '';
-  $('#body').innerHTML = `<div class="grid">${items.map((m, i) => tile({ name: m.name, sub: m.sub, icon: m.icon, glyph: m.glyph || 'E8A7', data: { link: i }, corner: del(i) })).join('')}</div>
-    ${editable ? `<div class="search"><input id="wname" type="text" placeholder="이름 (예: 인벤)" style="max-width:180px"><input id="wurl" type="text" placeholder="주소 (예: inven.co.kr)"><button class="btn" id="wadd">추가</button></div><div id="werr" class="hint"></div>` : ''}`;
-  if (editable) {
-    $('#wadd').onclick = async () => {
-      const name = $('#wname').value.trim(), url = $('#wurl').value.trim();
-      if (!url) { $('#werr').textContent = '주소를 입력하세요'; $('#werr').style.color = 'var(--danger)'; return; }
-      S.web = await api().add_web(name, url); renderLinks(S.web, true); notify('바로가기를 추가했어요');
-    };
-    $('#wurl').oninput = () => $('#werr').textContent = '';
+async function refreshLive() {
+  const d = await api().live_data();
+  if (S.menu !== 'live' || !$('#streams')) return;
+  S.live = d;
+  const list = d.streamers;
+  const live = list.filter(s => s.live).length;
+  $('#rs').textContent = `방송 중 ${live}명 · 등록 ${list.length}명`;
+  // 플랫폼 필터 (등록한 플랫폼이 둘 이상일 때만)
+  const used = PLATS.filter(p => list.some(s => s.platform === p));
+  if (!used.includes(S.liveFilter)) S.liveFilter = '전체';
+  $('#chips').innerHTML = used.length > 1 ? ['전체', ...used].map(p => {
+    const n = p === '전체' ? live : list.filter(s => s.platform === p && s.live).length;
+    return `<button class="chip${p === S.liveFilter ? ' on' : ''}" data-lf="${p}">${p === '전체' ? '전체' : esc(platName(p))}${n ? ` · ${n}` : ''}</button>`;
+  }).join('') : '';
+  // '전체'에서는 YouTube 채널을 숨길 수 있다 (YouTube 는 라이브보다 영상을 보러 가는 경우가 많아서, 아래 영상 목록만)
+  // YouTube 라이브는 아래 영상 목록에 LIVE 로 나오고, 채널 관리는 YouTube 칩에서 한다
+  const hideYT = d.hideChannels && S.liveFilter === '전체';
+  const ytCount = list.filter(s => s.platform === 'youtube').length;
+  const shown = list.filter(s => S.liveFilter === '전체' ? !(hideYT && s.platform === 'youtube') : s.platform === S.liveFilter);
+  const newBy = {};
+  d.videos.forEach(v => { newBy[v.channel] = (newBy[v.channel] || 0) + 1; });
+  $('#streams').innerHTML = shown.map(s => {
+    const off = s.checked ? '방송 꺼짐' : '확인 중…';
+    const sub = s.live ? [s.title, s.category].filter(Boolean).join(' · ')
+      : (s.platform === 'youtube' && newBy[s.id] ? `${off} · 새 영상 ${newBy[s.id]}개` : off);
+    const k = `data-p="${s.platform}"`;
+    return `<div class="sr${s.live ? '' : ' off'}">${avatar(s.image, s.live, s.platform)}
+      <div class="sr-text"><div class="sr-top">${s.live ? '<span class="lv">LIVE</span>' : ''}<b>${esc(s.name)}</b>${s.live && s.viewers ? `<span class="label">${Number(s.viewers).toLocaleString()}명</span>` : ''}</div>
+      <div class="sr-sub" title="${esc(sub)}">${esc(sub)}</div></div>
+      <button class="icon-btn" data-bell="${esc(s.id)}" ${k} data-on="${s.notify ? 1 : 0}" title="${s.platform === 'youtube' ? '방송·새 영상' : '방송'} 알림 ${s.notify ? '끄기' : '켜기'}">${glyph(s.notify ? 'EA8F' : 'E7ED')}</button>
+      <button class="icon-btn" data-del="${esc(s.id)}" ${k} title="목록에서 빼기">${glyph('E74D')}</button>
+      ${s.live ? `<button class="btn" data-watch="${esc(s.id)}" ${k}>시청</button>` : ''}
+    </div>`;
+  }).join('') || (hideYT && ytCount && shown.length === 0 ? '' : `<div class="empty">${list.length ? '이 플랫폼에 등록한 스트리머가 없어요.' : '아직 등록한 스트리머가 없어요. 위에서 플랫폼을 고르고 검색해 추가하세요.'}</div>`);
+  if (hideYT && ytCount) {
+    $('#streams').insertAdjacentHTML('beforeend', `<button class="yt-note" data-golf="youtube">${S.liveIcons && S.liveIcons.youtube ? `<img src="${S.liveIcons.youtube}" alt="">` : ''}
+      <span>YouTube 채널 ${ytCount}개는 목록에서 숨기고, 아래에 새 영상만 보여 줘요</span><b>채널 관리</b></button>`);
   }
+  renderVideos(d);
+}
+
+function renderVideos(d) {
+  const hasYT = d.streamers.some(s => s.platform === 'youtube');
+  if (!hasYT) { $('#vsec').innerHTML = ''; return; }
+  const vids = d.videos;
+  $('#vsec').innerHTML = `<div class="vsec-head"><span class="vsec-title">새로운 유튜브 동영상</span>${vids.length ? `<span class="label">${vids.length}개</span>` : ''}
+      <span class="vsec-tools"><span class="label" title="켜면 '전체'에서 YouTube 채널 줄을 숨기고 영상만 보여 줘요">전체에서 채널 숨기기</span><button class="switch${d.hideChannels ? ' on' : ''}" data-ythide="1" aria-label="전체에서 YouTube 채널 숨기기"></button>
+      <span class="label">쇼츠 숨기기</span><button class="switch${d.hideShorts ? ' on' : ''}" data-shorts="1" aria-label="쇼츠 숨기기"></button>
+      ${vids.length ? '<button class="btn ghost" data-vall="1">모두 읽음</button>' : ''}</span></div>
+    ${vids.length ? `<div class="vgrid">${vids.map(v => `<div class="vc" data-video="${esc(v.id)}" title="${esc(v.title)}">
+        <div class="vthumb" style="background-image:url('${esc(v.thumb)}')">${v.live ? '<span class="lv">LIVE</span>' : v.short ? '<span class="vbadge">쇼츠</span>' : ''}</div>
+        <div class="vinfo"><div class="vtitle">${esc(v.title)}</div>
+          <div class="vch"><span class="vav" style="${v.channelImage ? `background-image:url('${esc(v.channelImage)}')` : ''}"></span><span>${esc(v.channelName)}</span></div>
+          <div class="vmeta">${v.live ? (v.viewers ? `지금 라이브 · ${fmtCount(v.viewers)}명 시청 중` : '지금 라이브') : `조회수 ${fmtCount(v.views)}회 · ${ago(v.published)}`}</div></div>
+        <button class="vx" data-vdismiss="${esc(v.id)}" title="목록에서 지우기">${glyph('E711')}</button>
+      </div>`).join('')}</div>`
+    : '<div class="empty">새 영상이 없어요. 등록한 채널에 영상이 올라오면 여기에 나와요.</div>'}`;
+}
+
+/* ---------------- 고칠 수 있는 바로가기 격자 (메신저 · 웹 바로가기 · 작업 도구) ----------------
+   kind: 'msg' | 'web' | 'ws:<묶음 id>'. '편집'을 켜면 지우기 · 순서 바꾸기 · 눌러서 이름 바꾸기 */
+function linkGrid(kind, items) {
+  S.links[kind] = items;
+  const ed = S.edit, k = esc(kind);
+  const tiles = items.map((m, i) => {
+    const corner = ed ? `<span class="hide show" data-ldel="1" data-lk="${k}" data-li="${i}" title="지우기">${glyph('E711')}</span>
+      <span class="mv"><span data-lmv="-1" data-lk="${k}" data-li="${i}" title="앞으로"${i === 0 ? ' hidden' : ''}>${glyph('E76B')}</span><span data-lmv="1" data-lk="${k}" data-li="${i}" title="뒤로"${i === items.length - 1 ? ' hidden' : ''}>${glyph('E76C')}</span></span>` : '';
+    return tile({ name: m.name, sub: ed ? '눌러서 이름 바꾸기' : m.sub, icon: m.icon, glyph: m.glyph || 'E8A7',
+      on: !ed && m.action === 'docker' && m.sub === '실행 중', cls: ed ? 'editing' : '', data: { lk: kind, li: i }, corner });
+  }).join('');
+  const add = kind === 'web' ? '' : tile({ name: '추가', sub: '앱 · 파일 · 웹 주소', glyph: 'E710', cls: 'add', data: { addto: kind } });
+  return `<div class="grid">${tiles}${add}</div><div data-boxslot="${k}"></div>`;
+}
+const editChip = () => `<button class="chip${S.edit ? ' on' : ''}" data-edit="1">${S.edit ? '편집 끝내기' : '편집'}</button>`;
+
+// '추가' → 설치된 앱 목록에서 고르기 / 파일에서 고르기 / 웹 주소
+async function openAddBox(kind) {
+  $$('[data-boxslot]').forEach(b => b.innerHTML = '');
+  const slot = $(`[data-boxslot="${kind}"]`);
+  if (!slot) return;
+  const k = esc(kind);
+  slot.innerHTML = `<div class="addbox">
+    <div class="addbox-head"><div class="seg atabs"><button data-atab="app" class="on">설치된 앱</button><button data-atab="web">웹 주소</button></div>
+      <button class="btn ghost" data-afile="${k}">파일에서 고르기…</button>
+      <button class="icon-btn" data-aclose="1" title="닫기">${glyph('E711')}</button></div>
+    <div data-atabbody="app"><input type="text" class="afilter" placeholder="앱 이름으로 찾기"><div class="alist"><div class="hint">앱 목록을 불러오는 중…</div></div></div>
+    <div data-atabbody="web" hidden><div class="search" style="margin:0"><input class="aname" type="text" placeholder="이름 (예: 네이버)" style="max-width:180px"><input class="aurl" type="text" placeholder="주소 (예: google.com)"><button class="btn" data-aweb="${k}">추가</button></div></div>
+  </div>`;
+  const box = $('.addbox', slot);
+  $('.afilter', box).focus();
+  S.apps = S.apps || await api().app_choices();
+  const draw = () => {
+    const q = $('.afilter', box).value.trim().toLowerCase();
+    const list = S.apps.filter(a => !q || a.name.toLowerCase().includes(q)).slice(0, 80);
+    $('.alist', box).innerHTML = list.map(a => `<button class="arow" data-arow="${k}" data-name="${esc(a.name)}" data-target="${esc(a.target)}">${glyph('ECAA')}<span>${esc(a.name)}</span></button>`).join('')
+      || '<div class="hint">찾는 앱이 없어요. "파일에서 고르기"로 실행 파일을 직접 고를 수 있어요.</div>';
+  };
+  $('.afilter', box).oninput = draw;
+  draw();
+}
+
+async function runDetect(kind) {
+  notify('설치된 프로그램을 찾는 중…');
+  const added = await api().links_detect(kind, true);
+  notify(added.length ? `${added.join(', ')}을(를) 찾아서 추가했어요` : '새로 찾은 프로그램이 없어요');
+  await linksChanged(kind, await api().links(kind));
+}
+
+async function linksChanged(kind, items) {
+  if (kind === 'msg') { S.messengers = items; drawMsg(); }
+  else if (kind === 'web') { S.web = items; drawWeb(); }
+  else { S.ws = await api().workspace(); drawWs(); }
+}
+
+/* 메신저 · 커뮤니티: 설치된 메신저를 자동으로 찾고, 새로 설치하면 알아서 더한다 */
+function drawMsg() {
+  if (S.menu !== 'msg') return;
+  $('#rs').textContent = '설치된 메신저를 자동으로 찾아 넣어요';
+  $('#chips').innerHTML = editChip() + `<button class="chip" data-detect="msg">${glyph('E72C')} 새 메신저 찾기</button>`;
+  $('#body').innerHTML = linkGrid('msg', S.messengers)
+    + (S.messengers.length ? '' : '<div class="empty">찾은 메신저가 없어요. "추가"로 앱이나 커뮤니티 사이트를 직접 넣을 수 있어요.</div>')
+    + '<div class="hint">메신저를 새로 설치하면 이 메뉴를 열 때 자동으로 추가돼요. 지운 항목은 다시 들어오지 않아요. 집중 모드는 여기 있는 메신저를 꺼요.</div>';
+}
+async function renderMsg() {
+  drawMsg();
+  S.messengers = await api().links('msg'); drawMsg();
+  const added = await api().links_detect('msg', false);
+  if (added && added.length) { notify(`${added.join(', ')}을(를) 찾아서 추가했어요`); S.messengers = await api().links('msg'); drawMsg(); }
+}
+
+/* 웹 바로가기: 추가 칸을 맨 위에 */
+function drawWeb() {
+  if (S.menu !== 'web') return;
+  $('#rs').textContent = '자주 가는 사이트';
+  $('#chips').innerHTML = editChip();
+  const keep = { name: $('#wname')?.value || '', url: $('#wurl')?.value || '' };
+  $('#body').innerHTML = `<div class="search web-add"><input id="wname" type="text" placeholder="이름 (예: 네이버)" style="max-width:200px"><input id="wurl" type="text" placeholder="주소 (예: google.com)"><button class="btn" id="wadd">추가</button></div>
+    <div id="werr" class="hint" style="margin:-2px 0 10px"></div>` + linkGrid('web', S.web);
+  $('#wname').value = keep.name; $('#wurl').value = keep.url;
+  const add = async () => {
+    const name = $('#wname').value.trim(), url = $('#wurl').value.trim();
+    if (!url) { $('#werr').textContent = '주소를 입력하세요'; $('#werr').style.color = 'var(--danger)'; return; }
+    $('#wname').value = ''; $('#wurl').value = '';
+    await linksChanged('web', await api().links_add('web', { name, target: url, type: 'web' })); notify('바로가기를 추가했어요');
+  };
+  $('#wadd').onclick = add;
+  $('#wurl').onkeydown = e => { if (e.key === 'Enter') add(); };
+  $('#wname').onkeydown = e => { if (e.key === 'Enter') $('#wurl').focus(); };
+  $('#wurl').oninput = () => $('#werr').textContent = '';
+}
+async function renderWeb() { drawWeb(); S.web = await api().links('web'); drawWeb(); }
+
+/* 작업 도구: 분야별(개발 · 음악 · 영상 · 디자인 …) 프로그램 묶음 + 작업 폴더 */
+function setWsTitle(t) {
+  S.wsTitle = t || '작업 도구';
+  MENU_NAMES.dev = S.wsTitle;
+  const mi = $('.mi[data-k="dev"] .mtx'); if (mi) mi.textContent = S.wsTitle;
+  if (S.menu === 'dev') $('#rt').textContent = S.wsTitle;
+}
+function drawWs() {
+  const w = S.ws;
+  if (S.menu !== 'dev' || !w) return;
+  setWsTitle(w.title);
+  $('#rs').textContent = '분야별 프로그램과 작업 폴더';
+  $('#chips').innerHTML = editChip() + `<button class="chip" data-gadd="1">${glyph('E710')} 묶음 추가</button>`
+    + (S.edit ? '<button class="chip" data-wstitle="1">메뉴 이름 바꾸기</button>' : '');
+  const groups = w.groups.map((g, gi) => {
+    const kind = `ws:${g.id}`;
+    const tools = S.edit ? `<span class="grp-tools">
+        <button class="icon-btn" data-grename="${esc(g.id)}" title="묶음 이름 바꾸기">${glyph('E8AC')}</button>
+        <button class="icon-btn" data-gmove="${esc(g.id)}" data-d="-1" title="위로"${gi === 0 ? ' disabled' : ''}>${glyph('E70E')}</button>
+        <button class="icon-btn" data-gmove="${esc(g.id)}" data-d="1" title="아래로"${gi === w.groups.length - 1 ? ' disabled' : ''}>${glyph('E70D')}</button>
+        <button class="icon-btn" data-gdel="${esc(g.id)}" title="묶음 지우기">${glyph('E74D')}</button></span>`
+      : (g.field ? `<span class="grp-tools"><button class="icon-btn" data-detect="${esc(kind)}" title="새로 설치한 프로그램 찾기">${glyph('E72C')}</button></span>` : '');
+    return `<div class="grp-head"><span class="sec">${esc(g.name)}</span>${tools}</div>${linkGrid(kind, g.items)}`;
+  }).join('') || '<div class="empty">"묶음 추가"로 하는 작업(개발, 음악, 영상 편집 …)을 고르면 설치된 프로그램을 찾아서 넣어 드려요.</div>';
+  const corner = i => w.terminal ? `<span class="corner" data-term="${i}" title="터미널에서 열기">${glyph('E756')}</span>` : '';
+  const folder = w.folder
+    ? `<div class="grp-head"><span class="sec">작업 폴더 · ${esc(w.folder)}</span><span class="grp-tools"><button class="icon-btn" data-wsfolder="1" title="작업 폴더 바꾸기">${glyph('E8DA')}</button></span></div>
+       <div class="grid">${w.projects.map((p, i) => tile({ name: p.name, sub: '폴더 열기', glyph: 'E8B7', data: { proj: i }, corner: corner(i) })).join('') || '<div class="empty">폴더가 비어 있어요</div>'}</div>`
+    : `<div class="grp-head"><span class="sec">작업 폴더</span></div>
+       <div class="empty">프로젝트나 작업 파일을 모아 둔 폴더를 고르면, 그 안의 폴더를 여기서 바로 열 수 있어요 <button class="btn ghost" data-wsfolder="1">폴더 고르기</button></div>`;
+  $('#body').innerHTML = '<div id="grppick"></div>' + groups + folder;
+}
+async function renderWs() { if (S.ws) drawWs(); S.ws = await api().workspace(); drawWs(); }
+
+function showGroupPicker() {
+  const used = new Set(S.ws.groups.map(g => g.field));
+  $('#grppick').innerHTML = `<div class="addbox"><div class="addbox-head"><b>어떤 작업을 하세요?</b>
+      <span class="hint" style="margin:0">고르면 이 PC 에 설치된 관련 프로그램을 찾아서 넣어 드려요</span>
+      <button class="icon-btn" data-aclose="1" title="닫기">${glyph('E711')}</button></div>
+    <div class="fields">${S.ws.fields.map(f => `<button class="fieldbtn${used.has(f.id) ? ' used' : ''}" data-gfield="${f.id}" data-name="${esc(f.name)}">${glyph(f.glyph)}<span>${esc(f.name)}</span>${used.has(f.id) ? '<small>추가됨</small>' : ''}</button>`).join('')}
+      <button class="fieldbtn" data-gfield="" data-name="">${glyph('E710')}<span>직접 만들기</span></button></div></div>`;
+}
+
+// 이름 입력 받기 (확인 바에 입력 칸을 붙여서)
+function promptBar(msg, value) {
+  return new Promise(res => {
+    const inp = $('#cinput');
+    $('#cmsg').textContent = msg; inp.hidden = false; inp.value = value || ''; $('#confirm').hidden = false;
+    setTimeout(() => { inp.focus(); inp.select(); }, 0);
+    const done = v => { $('#confirm').hidden = true; inp.hidden = true; inp.onkeydown = null; res(v); };
+    $('#cyes').onclick = () => done(inp.value.trim() || null);
+    $('#cno').onclick = () => done(null);
+    inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim() || null); if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
+  });
+}
+
+// 바로가기 / 작업 도구 관련 클릭 (본문 클릭 처리에서 먼저 부른다). 처리했으면 true
+async function handleLinkClick(e, t) {
+  const d = t.dataset;
+  if (d.ldel) {
+    e.stopPropagation();
+    const it = S.links[d.lk][Number(d.li)];
+    if (await confirmBar(`'${it.name}'을(를) 목록에서 지울까요?`)) await linksChanged(d.lk, await api().links_remove(d.lk, Number(d.li)));
+    return true;
+  }
+  if (d.lmv) { e.stopPropagation(); await linksChanged(d.lk, await api().links_move(d.lk, Number(d.li), Number(d.lmv))); return true; }
+  if (d.lk !== undefined && d.li !== undefined) {
+    const it = S.links[d.lk][Number(d.li)];
+    if (S.edit) {
+      const name = await promptBar('새 이름', it.name);
+      if (name) await linksChanged(d.lk, await api().links_rename(d.lk, Number(d.li), name));
+    } else if (it.action === 'docker') {
+      const on = await api().action('docker'); notify(on ? 'Docker를 켜는 중이에요' : 'Docker를 끄는 중이에요'); setTimeout(renderWs, 4000);
+    } else {
+      api().open(it.target, it.args || null);
+    }
+    return true;
+  }
+  if (d.addto) { openAddBox(d.addto); return true; }
+  if (d.aclose) { t.closest('.addbox').remove(); return true; }
+  if (d.atab) {
+    const box = t.closest('.addbox');
+    $$('[data-atab]', box).forEach(b => b.classList.toggle('on', b === t));
+    $$('[data-atabbody]', box).forEach(b => b.hidden = b.dataset.atabbody !== d.atab);
+    const f = $(d.atab === 'web' ? '.aname' : '.afilter', box); if (f) f.focus();
+    return true;
+  }
+  if (d.arow) { await linksChanged(d.arow, await api().links_add(d.arow, { name: d.name, target: d.target, type: 'app' })); notify(`${d.name}을(를) 추가했어요`); return true; }
+  if (d.afile) {
+    const f = await api().pick_app_file();
+    if (f) { await linksChanged(d.afile, await api().links_add(d.afile, { ...f, type: 'app' })); notify(`${f.name}을(를) 추가했어요`); }
+    return true;
+  }
+  if (d.aweb) {
+    const box = t.closest('.addbox'), name = $('.aname', box).value.trim(), url = $('.aurl', box).value.trim();
+    if (!url) { $('.aurl', box).focus(); return true; }
+    await linksChanged(d.aweb, await api().links_add(d.aweb, { name, target: url, type: 'web' })); notify('바로가기를 추가했어요');
+    return true;
+  }
+  if (d.grename) {
+    const g = S.ws.groups.find(x => x.id === d.grename);
+    const name = await promptBar('묶음 이름', g.name);
+    if (name) { S.ws = await api().ws_rename_group(d.grename, name); drawWs(); }
+    return true;
+  }
+  if (d.gmove) { S.ws = await api().ws_move_group(d.gmove, Number(d.d)); drawWs(); return true; }
+  if (d.gdel) {
+    const g = S.ws.groups.find(x => x.id === d.gdel);
+    if (await confirmBar(`'${g.name}' 묶음과 그 안의 바로가기를 지울까요? (프로그램은 지워지지 않아요)`)) { S.ws = await api().ws_remove_group(d.gdel); drawWs(); }
+    return true;
+  }
+  if (d.gfield !== undefined) {
+    let name = d.name;
+    if (!d.gfield) { name = await promptBar('새 묶음 이름 (예: 업무, 공부)', ''); if (!name) return true; }
+    $('#grppick').innerHTML = '<div class="hint">설치된 프로그램을 찾는 중…</div>';
+    S.ws = await api().ws_add_group(d.gfield, name); drawWs();
+    const g = S.ws.groups[S.ws.groups.length - 1];
+    notify(d.gfield ? `'${g.name}' 묶음에 프로그램 ${g.items.length}개를 찾아 넣었어요` : `'${g.name}' 묶음을 만들었어요`);
+    return true;
+  }
+  if (d.wsfolder) {
+    const p = await api().pick_folder();
+    if (p) { S.ws = await api().ws_set(null, p); drawWs(); }
+    return true;
+  }
+  return false;
 }
 
 async function renderFiles() {
@@ -236,35 +519,53 @@ async function renderFiles() {
     <div class="drives">${f.drives.map((d, i) => `<div class="drv" data-drive="${i}" style="cursor:pointer"><b>${esc(d.name)}</b><span class="bar${d.pct > 90 ? ' low' : ''}"><i style="width:${d.pct}%"></i></span><span>${d.pct}% · ${esc(d.free)} 남음</span></div>`).join('')}</div>`;
 }
 
-async function renderDev() {
-  const d = await api().dev();
-  if (S.menu !== 'dev') return;
-  S.dev = d;
-  $('#rs').textContent = d.projectsDir ? `${d.projectsDir} 자동 감지` : '';
-  const corner = i => `<span class="corner" data-term="${i}" title="터미널에서 열기">${glyph('E756')}</span>`;
-  const projects = d.projectsDir
-    ? (d.projects.map((p, i) => tile({ name: p.name, sub: '폴더 열기', glyph: 'E943', data: { proj: i }, corner: corner(i) })).join('') || '<div class="empty">프로젝트 폴더가 비어 있어요</div>')
-    : `<div class="empty">설정에서 프로젝트 폴더를 지정하면 여기에 나와요 <button class="btn ghost" data-gosettings="1">설정 열기</button></div>`;
-  $('#body').innerHTML = `<div class="sec">프로젝트</div><div class="grid">${projects}</div>
-    <div class="sec">도구</div>
-    <div class="grid">${d.tools.map((t, i) => tile({ name: t.name, sub: t.sub, icon: t.icon, glyph: t.glyph || 'E756', on: t.action === 'docker' && t.sub === '실행 중', data: { tool: i } })).join('')}</div>`;
+/* 시스템: 위쪽 상태 카드(CPU · RAM · GPU · 켜진 시간) + 묶음별 큰 버튼 카드 */
+const fmtUptime = s => {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
+};
+function statCard(label, value, pct, low) {
+  return `<div class="stc"><span class="label">${label}</span><b>${value}</b>${pct == null ? '<span class="bar" style="visibility:hidden"><i></i></span>' : `<span class="bar${low ? ' low' : ''}"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>`}</div>`;
 }
-
+function wideCard({ k, name, sub, glyph: gl, on, warn, quick }) {
+  return `<button class="wcard${on ? ' on' : ''}${warn ? ' warn' : ''}" ${quick ? 'data-sq' : 'data-act'}="${k}" title="${esc(name)}">
+    ${glyph(gl)}<span class="wtx"><b>${esc(name)}</b><small>${esc(sub || '')}</small></span></button>`;
+}
 function renderSys() {
-  const q = S.quick || {};
-  $('#rs').textContent = '버튼 하나로 실행';
-  const items = [
-    { k: 'ram', name: 'RAM 청소', sub: S.ramMsg || '메모리 회수', glyph: 'E945' },
-    { k: 'focus', name: '집중 모드', sub: q.focus ? '켜짐 · 메신저 꺼짐' : '메신저 끄기', glyph: 'E708', on: q.focus },
-    { k: 'monitor', name: '모니터 1/2', sub: q.monitors > 1 ? `지금 ${q.monitors}대 → 1대` : '지금 1대 → 2대', glyph: 'E7F4' },
-    q.hasWallpaper ? { k: 'wallpaper', name: '배경 일시정지', sub: q.wallpaperPaused ? '멈춤 · 눌러서 재생' : '재생 중', glyph: 'E8B9', on: q.wallpaperPaused } : null,
-    { k: 'disk', name: '디스크 청소', sub: 'Windows 디스크 정리', glyph: 'E75C' },
-    { k: 'empty_bin', name: '휴지통 비우기', sub: S.bin ? (S.bin.count ? `${S.bin.count}개 · ${S.bin.sizeText}` : '비어 있음') : '영구 삭제', glyph: 'E894', warn: S.bin && S.bin.count > 0 },
-    q.shutdownIn != null
-      ? { k: 'cancel_shutdown', name: '종료 취소', sub: `${q.shutdownIn}초 뒤 종료`, glyph: 'E7E8', warn: true }
-      : { k: 'shutdown', name: '안전 종료', sub: '1분 뒤 PC 끄기', glyph: 'E7E8' },
-  ].filter(Boolean);
-  $('#body').innerHTML = `<div class="grid">${items.map(it => tile({ ...it, data: { act: it.k } })).join('')}</div>`;
+  const q = S.quick || {}, st = S.stats || {}, ov = S.sysov || {};
+  $('#rs').textContent = '상태 확인과 버튼 하나로 실행';
+  const stats = [
+    statCard('CPU', st.cpu == null ? '-' : `${st.cpu}%`, st.cpu),
+    statCard(`RAM · ${st.ramUsed ?? '-'} / ${st.ramTotal ?? '-'}GB`, st.ramPct == null ? '-' : `${st.ramPct}%`, st.ramPct, st.ramPct > 90),
+    st.gpu != null ? statCard(`GPU${ov.gpuTemp != null ? ` · ${ov.gpuTemp}°C` : ''}`, `${st.gpu}%`, st.gpu)
+      : (ov.disk ? statCard(`디스크 ${esc(ov.disk.name)} · ${esc(ov.disk.free)} 남음`, `${ov.disk.pct}%`, ov.disk.pct, ov.disk.pct > 90) : ''),
+    statCard('켜진 시간', ov.uptime != null ? fmtUptime(ov.uptime) : '-', null),
+  ].join('');
+  const disk = ov.disk;
+  const groups = [
+    ['빠른 정리', [
+      { k: 'ram', name: 'RAM 청소', sub: S.ramMsg || (ov.ramFree != null ? `지금 ${ov.ramFree}GB 남음` : '메모리 회수'), glyph: 'E945' },
+      { k: 'disk', name: '디스크 청소', sub: disk ? `${disk.name} ${disk.pct}% 사용 · ${disk.free} 남음` : 'Windows 디스크 정리', glyph: 'E75C', warn: disk && disk.pct > 90 },
+      { k: 'empty_bin', name: '휴지통 비우기', sub: S.bin ? (S.bin.count ? `${S.bin.count}개 · ${S.bin.sizeText}` : '비어 있음') : '영구 삭제', glyph: 'E894', warn: S.bin && S.bin.count > 0 },
+    ]],
+    ['화면 · 집중', [
+      { k: 'focus', name: '집중 모드', sub: q.focus ? '켜짐 · 메신저 꺼짐' : '메신저를 잠시 꺼요', glyph: 'E7ED', on: q.focus },
+      { k: 'monitor', name: '모니터 1/2', sub: q.monitors > 1 ? `지금 ${q.monitors}대 → 1대` : '지금 1대 → 2대', glyph: 'E7F4' },
+      q.hasWallpaper ? { k: 'wallpaper', name: '배경 멈춤', sub: q.wallpaperPaused ? '멈춤 · 눌러서 재생' : '재생 중', glyph: 'E8B9', on: q.wallpaperPaused } : null,
+    ]],
+    ['전원', [
+      { k: 'lock', name: '화면 잠금', sub: '바로 잠그기', glyph: 'E72E', quick: true },
+      { k: 'sleep', name: '절전', sub: '확인 후 절전 모드', glyph: 'E708', quick: true },
+      q.shutdownIn != null
+        ? { k: 'cancel_shutdown', name: '종료 취소', sub: `${q.shutdownIn}초 뒤 종료`, glyph: 'E7E8', warn: true }
+        : { k: 'shutdown', name: '안전 종료', sub: '1분 뒤 · 그 전에 취소 가능', glyph: 'E7E8' },
+    ]],
+  ];
+  const html = `<div class="stats-row">${stats}</div>` + groups.map(([title, items]) =>
+    `<div class="sec">${title}</div><div class="wgrid">${items.filter(Boolean).map(wideCard).join('')}</div>`).join('');
+  if (html === S.sysHtml && $('#body .stats-row')) return;     // 2초마다 갱신할 때 바뀐 게 없으면 그대로 (마우스 올림 상태 유지)
+  S.sysHtml = html;
+  $('#body').innerHTML = html;
 }
 
 /* ---------------- 설정 ---------------- */
@@ -284,6 +585,9 @@ async function renderSettings() {
   $('#body').innerHTML = `
     <div class="set"><h4>Windows 시작 시 자동 실행</h4><div class="desc">로그인하고 10초 뒤에 HUD를 켜요.</div>
       <div class="row"><button class="switch${s.autostart ? ' on' : ''}" id="s-auto" aria-label="자동 실행"></button><span class="desc" id="s-auto-t">${s.autostart ? '켜짐' : '꺼짐'}</span></div></div>
+    <div class="set"><h4>HUD 불러오기 단축키</h4><div class="desc">어느 창에 있든 이 단축키를 누르면 HUD가 맨 앞에 떠요. 단축키를 한 번 더 누르거나, Esc를 누르거나, 다른 창을 누르면 다시 바탕화면으로 돌아가요.</div>
+      <div class="row"><button class="keycap" id="s-hk" title="눌러서 새 단축키 입력">${esc(s.hotkey || '꺼짐')}</button>
+        <button class="btn ghost" id="s-hk-off"${s.hotkey ? '' : ' hidden'}>끄기</button><span class="hint" id="s-hk-msg" style="margin:0">바꾸려면 단추를 누른 뒤 새 조합을 누르세요</span></div></div>
     <div class="set"><h4>모양</h4>
       <div class="row"><label>테마</label><div class="seg" id="s-theme" style="flex:none;width:200px"><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
       <div class="row"><label>글꼴</label><div class="seg" id="s-font" style="flex:none;width:300px"><button data-v="pretendard" style="font-family:Pretendard">Pretendard</button><button data-v="suit" style="font-family:SUIT">SUIT</button><button data-v="system">Windows 기본</button></div></div>
@@ -320,8 +624,8 @@ async function renderSettings() {
       </select></div></div>
     <div class="set"><h4>키보드 버튼</h4><div class="desc">키보드 아이콘을 누르면 열 주소예요. 비워 두면 버튼이 숨겨져요.</div>
       <div class="row"><input type="text" id="s-kb" value="${esc(s.keyboard_url)}" placeholder="https://"></div></div>
-    <div class="set"><h4>개발 프로젝트 폴더</h4>
-      <div class="row"><input type="text" id="s-proj" value="${esc(s.projects_dir)}" placeholder="예: C:\\Users\\이름\\source\\repos"><button class="btn ghost" id="s-proj-pick">찾아보기</button></div></div>
+    <div class="set"><h4>작업 폴더</h4><div class="desc">'작업 도구' 메뉴 아래쪽에 이 폴더 안의 폴더들이 나와요. (프로젝트, 곡 작업 폴더 등)</div>
+      <div class="row"><input type="text" id="s-proj" value="${esc(s.projects_dir)}" placeholder="예: D:\\작업"><button class="btn ghost" id="s-proj-pick">찾아보기</button></div></div>
     <div class="row" style="gap:6px;margin:4px 0 8px"><button class="btn" id="s-save">저장</button><button class="btn ghost" id="s-cfg">설정 파일 열기</button><button class="btn ghost" id="s-log">로그 열기</button><span class="hint" id="s-msg" style="margin:0"></span></div>`;
   setSeg('s-theme', theme);
   // 글꼴: 누르면 바로 미리 적용, 저장하면 유지
@@ -367,10 +671,60 @@ async function renderSettings() {
     $('#s-auto').classList.toggle('on', now); $('#s-auto-t').textContent = now ? '켜짐' : '꺼짐';
     if (now !== want) notify('자동 실행 설정을 바꾸지 못했어요');
   };
+  bindHotkeyInput(s.hotkey);
   $('#s-proj-pick').onclick = async () => { const p = await api().pick_folder(); if (p) $('#s-proj').value = p; };
   $('#s-cfg').onclick = () => api().open_config();
   $('#s-log').onclick = () => api().open_log();
   $('#s-save').onclick = async () => { await saveSettingsForm(); $('#s-msg').textContent = '저장했어요'; notify('설정을 저장했어요'); };
+}
+
+/* 설정: 단축키 입력 — 단추를 누르고 원하는 조합을 누르면 바로 등록 (Esc 는 취소) */
+const KEY_NAMES = {
+  Space: 'Space', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+  Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Insert: 'Insert', Delete: 'Delete', Home: 'Home',
+  End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down',
+  Tab: 'Tab', Enter: 'Enter', Backspace: 'Backspace', Pause: 'Pause',
+};
+function keyName(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  if (/^F\d{1,2}$/.test(code)) return code;
+  if (/^Numpad\d$/.test(code)) return 'Num' + code.slice(6);
+  return KEY_NAMES[code] || null;
+}
+function bindHotkeyInput(current) {
+  const cap = $('#s-hk'), msg = $('#s-hk-msg'), off = $('#s-hk-off');
+  let cur = current || '';
+  const show = (spec, text, bad) => {
+    cur = spec; cap.textContent = spec || '꺼짐'; cap.classList.remove('rec'); off.hidden = !spec;
+    msg.textContent = text; msg.style.color = bad ? 'var(--danger)' : '';
+  };
+  const stop = () => { S.capturingKey = false; document.removeEventListener('keydown', onKey, true); cap.classList.remove('rec'); };
+  const onKey = async e => {
+    e.preventDefault(); e.stopPropagation();
+    if (['Control', 'Alt', 'Shift', 'Meta', 'HangulMode', 'HanjaMode', 'Process'].includes(e.key)) {
+      cap.textContent = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Win'].filter(Boolean).join('+') + '+…';
+      return;
+    }
+    if (e.code === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+      stop(); api().suspend_hotkey(false); show(cur, '취소했어요'); return;
+    }
+    const k = keyName(e.code);
+    if (!k) { msg.textContent = '이 키는 쓸 수 없어요. 다른 키를 눌러 보세요'; msg.style.color = 'var(--danger)'; return; }
+    const spec = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Win', k].filter(Boolean).join('+');
+    stop();
+    const r = await api().set_hotkey(spec);
+    if (r.ok) show(r.spec, `${r.spec} 로 바꿨어요`); else show(r.spec, r.error, true);
+  };
+  cap.onclick = () => {
+    if (S.capturingKey) return;
+    S.capturingKey = true; cap.classList.add('rec'); cap.textContent = '키를 누르세요…';
+    msg.textContent = 'Ctrl / Alt / Shift / Win 과 함께 누르세요 (F 키는 혼자도 돼요) · Esc: 취소'; msg.style.color = '';
+    api().suspend_hotkey(true);
+    document.addEventListener('keydown', onKey, true);
+  };
+  cap.onblur = () => { if (S.capturingKey) { stop(); api().suspend_hotkey(false); show(cur, ''); } };
+  off.onclick = async () => { const r = await api().set_hotkey(''); show(r.spec, '단축키를 껐어요'); };
 }
 
 /* 설정 도우미: 슬라이더 + 숫자 입력 칸 */
@@ -399,7 +753,7 @@ function layoutForm() {
   };
 }
 
-const MENU_NAMES = { game: '게임', live: '치지직 라이브', msg: '메신저·커뮤니티', file: '내 파일', dev: '개발 유틸리티', sys: '시스템', web: '웹 바로가기' };
+const MENU_NAMES = { game: '게임', live: '라이브', msg: '메신저·커뮤니티', file: '내 파일', dev: '작업 도구', sys: '시스템', web: '웹 바로가기' };
 function renderMenuOrder() {
   const list = S.menuDraft;
   $('#s-menu').innerHTML = list.map((m, i) => `<div class="mo${m.show ? '' : ' off'}">
@@ -456,7 +810,14 @@ async function runQuick(btn) {
 window.setVisible = visible => {
   const wasHidden = S.hidden;
   S.hidden = !visible;
-  if (visible && wasHidden) { tickClock(); pollStatus(); pollMedia(); if (S.menu === 'live') renderLive(); }
+  if (visible && wasHidden) { tickClock(); pollStatus(); pollMedia(); if (S.menu === 'live') refreshLive(); }
+};
+
+// Python 쪽에서 단축키로 HUD 를 맨 앞에 띄우거나 다시 뒤로 보낼 때 부른다
+window.setFront = front => {
+  S.front = !!front;
+  document.body.classList.toggle('front', S.front);
+  if (S.front && S.menu === 'live' && $('#q')) $('#q').focus();
 };
 
 // Python 쪽에서 창 위치가 바뀔 때 부른다 (붙일 쪽 변경, 끌어서 옮기기 등)
@@ -531,40 +892,65 @@ function bindEvents() {
     if (g === 'settings') openMenu(S.menu === 'settings' ? null : 'settings');
     if (g === 'theme') { applyTheme(await api().set_theme(document.body.classList.contains('dark') ? 'light' : 'dark')); if (S.menu === 'settings') renderSettings(); }
     if (g === 'rescan') { S.games = await api().games(true); $('#gcnt').textContent = S.games.length; if (S.menu === 'game') renderGames(); notify(`게임 ${S.games.length}개를 찾았어요`); }
-    if (g === 'toast') { const ok = await api().chzzk_test(); notify(ok ? '알림을 보냈어요' : '알림을 띄우지 못했어요'); }
+    if (g === 'toast') { const ok = await api().live_test(); notify(ok ? '알림을 보냈어요' : '알림을 띄우지 못했어요'); }
     if (g === 'reload') location.reload();
     if (g === 'quit' && await confirmBar('HUD를 종료할까요?')) api().quit();
   });
 
   $('#body').addEventListener('click', async e => {
-    const t = e.target.closest('[data-hide],[data-webdel],[data-term],[data-game],[data-addgame],[data-link],[data-file],[data-open],[data-drive],[data-proj],[data-tool],[data-act],[data-bell],[data-del],[data-watch],[data-add],[data-gosettings]');
+    const t = e.target.closest('[data-hide],[data-webdel],[data-term],[data-game],[data-addgame],[data-link],[data-file],[data-open],[data-drive],[data-proj],[data-tool],[data-act],[data-bell],[data-del],[data-watch],[data-add],[data-gosettings],[data-vdismiss],[data-video],[data-vall],[data-shorts],[data-ythide],[data-golf],[data-rclose],[data-lk],[data-addto],[data-aclose],[data-atab],[data-arow],[data-afile],[data-aweb],[data-grename],[data-gmove],[data-gdel],[data-gfield],[data-wsfolder],[data-detect],[data-sq]');
     if (!t) return;
     const d = t.dataset;
+    if (d.detect) { runDetect(d.detect); return; }
+    if (d.sq) {
+      if (d.sq === 'sleep' && !(await confirmBar('PC를 절전 모드로 바꿀까요?'))) return;
+      api().quick_run(d.sq); return;
+    }
+    if (await handleLinkClick(e, t)) return;
     if (d.hide) { e.stopPropagation(); if (await confirmBar(`'${t.closest('.tile').title}'을(를) 게임 목록에서 숨길까요?`)) { S.games = await api().hide_game(d.hide); $('#gcnt').textContent = S.games.length; renderGames(); } return; }
-    if (d.webdel !== undefined) { e.stopPropagation(); S.web = await api().remove_web(Number(d.webdel)); renderLinks(S.web, true); return; }
-    if (d.term !== undefined) { e.stopPropagation(); api().open_project(S.dev.projects[d.term].target, true); return; }
+    if (d.term !== undefined) { e.stopPropagation(); api().open_project(S.ws.projects[d.term].target, true); return; }
     if (d.game) { api().launch_game(d.game); notify(`${t.title} 실행 중…`); }
     else if (d.addgame) { const g = await api().add_game(); if (g) { S.games = g; $('#gcnt').textContent = g.length; renderGames(); notify('게임을 추가했어요'); } }
-    else if (d.link !== undefined) { const it = (S.menu === 'msg' ? S.messengers : S.web)[d.link]; api().open(it.target, it.args || null); }
     else if (d.file !== undefined) api().open(S.fileItems[d.file].target);
     else if (d.open) api().open(d.open);
     else if (d.drive !== undefined) api().open(S.drives[d.drive].target);
-    else if (d.proj !== undefined) api().open_project(S.dev.projects[d.proj].target, false);
-    else if (d.tool !== undefined) {
-      const tl = S.dev.tools[d.tool];
-      if (tl.action === 'docker') { const on = await api().action('docker'); notify(on ? 'Docker를 켜는 중이에요' : 'Docker를 끄는 중이에요'); setTimeout(renderDev, 4000); }
-      else api().open(tl.target, tl.args || null);
-    }
+    else if (d.proj !== undefined) api().open_project(S.ws.projects[d.proj].target, false);
     else if (d.act) runAction(d.act);
-    else if (d.bell) { await api().chzzk_notify(d.bell, d.on !== '1'); renderLive(); }
-    else if (d.del) { if (await confirmBar('이 스트리머를 목록에서 뺄까요?')) { await api().chzzk_remove(d.del); renderLive(); } }
-    else if (d.watch) api().chzzk_open(d.watch);
-    else if (d.add) { await api().chzzk_add(d.add, d.name, d.img); notify(`${d.name} 님을 추가했어요`); setTimeout(renderLive, 1500); }
+    else if (d.bell) { await api().live_notify(d.p, d.bell, d.on !== '1'); refreshLive(); }
+    else if (d.del) { if (await confirmBar('이 채널을 목록에서 뺄까요?')) { await api().live_remove(d.p, d.del); refreshLive(); } }
+    else if (d.watch) api().live_open(d.p, d.watch);
+    else if (d.add) {
+      await api().live_add(d.p, d.add, d.name, d.img); notify(`${d.name} 님을 추가했어요`);
+      t.outerHTML = '<span class="label">추가됨</span>';
+      refreshLive(); setTimeout(refreshLive, 2500); if (d.p === 'youtube') setTimeout(refreshLive, 8000);
+    }
+    else if (d.vdismiss) { e.stopPropagation(); await api().video_dismiss([d.vdismiss]); refreshLive(); pollStatus(); }
+    else if (d.video) { api().video_open(d.video); setTimeout(() => { refreshLive(); pollStatus(); }, 300); }
+    else if (d.vall) { await api().video_dismiss((S.live?.videos || []).map(v => v.id)); notify('새 영상을 모두 읽음으로 표시했어요'); refreshLive(); pollStatus(); }
+    else if (d.shorts) { S.live = await api().set_hide_shorts(!t.classList.contains('on')); refreshLive(); pollStatus(); }
+    else if (d.ythide) { const on = !t.classList.contains('on'); await api().set_hide_yt_channels(on); notify(on ? "'전체'에서 YouTube 채널을 숨겼어요" : "'전체'에 YouTube 채널도 보여요"); refreshLive(); }
+    else if (d.golf) { S.liveFilter = d.golf; refreshLive(); }
+    else if (d.rclose) { $('#results').innerHTML = ''; $('#q').value = ''; }
     else if (d.gosettings) openMenu('settings');
   });
-  $('#chips').addEventListener('click', e => {
+  $('#chips').addEventListener('click', async e => {
+    const ch = e.target.closest('[data-edit],[data-detect],[data-gadd],[data-wstitle]');
+    if (ch) {
+      const cd = ch.dataset;
+      if (cd.edit) { S.edit = !S.edit; if (S.menu === 'msg') drawMsg(); else if (S.menu === 'web') drawWeb(); else drawWs(); }
+      else if (cd.detect) runDetect(cd.detect);
+      else if (cd.gadd) showGroupPicker();
+      else if (cd.wstitle) { const t = await promptBar('왼쪽 메뉴에 보일 이름 (예: 음악 작업실)', S.ws.title); if (t) { S.ws = await api().ws_set(t, null); drawWs(); } }
+      return;
+    }
+    const lf = e.target.closest('[data-lf]');
+    if (lf) { S.liveFilter = lf.dataset.lf; refreshLive(); return; }
     const c = e.target.closest('[data-f]'); if (!c) return;
     S.gameFilter = c.dataset.f; renderGames();
+  });
+  // 단축키로 맨 앞에 띄운 상태에서 Esc 를 누르면 다시 바탕화면으로
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && S.front && !S.capturingKey) { e.preventDefault(); api().hide_front(); }
   });
 }
 
@@ -607,14 +993,14 @@ window.addEventListener('pywebviewready', async () => {
   S.games = d.games; S.messengers = d.messengers; S.web = d.web; S.favs = d.audioFavs;
   $('#kb').hidden = !d.hasKeyboard;
   if (d.kbIcon) $('#kbicon').innerHTML = `<img src="${d.kbIcon}" alt="">`;
-  if (d.chzzkIcon) $('#liveicon').innerHTML = `<img src="${d.chzzkIcon}" alt="">`;
-  applyMenu(d.menu); setPlayer(d.player);
+  S.liveIcons = d.liveIcons || {}; S.platforms = d.platforms || {};
+  applyMenu(d.menu); setPlayer(d.player); setWsTitle(d.wsTitle);
   $('#gcnt').textContent = S.games.length;
   renderAudioButtons(); setSeg('snd', d.audio); renderQuick(d.quickButtons);
   // 다른 창에 완전히 가려져 있으면(S.hidden) 아무것도 새로 그리지 않는다 — 보이는 순간 바로 갱신
   pollStatus(); setInterval(() => { if (!S.hidden) pollStatus(); }, 2000);
   pollMedia(); setInterval(() => { if (!S.hidden) pollMedia(); }, 1500);
   setInterval(() => { if (!S.hidden && S.media && S.media.playing) tickProgress(); }, 500);
-  setInterval(() => { if (!S.hidden && S.menu === 'live') renderLive(); }, 30000);
+  setInterval(() => { if (!S.hidden && S.menu === 'live') refreshLive(); }, 30000);
   if (d.openPanel) openMenu(d.openPanel);
 });

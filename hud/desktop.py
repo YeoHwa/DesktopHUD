@@ -69,6 +69,78 @@ def peek_front(window, seconds: float):
     user32.SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
 
+HWND_TOPMOST, HWND_NOTOPMOST = wintypes.HWND(-1), wintypes.HWND(-2)
+SWP_SHOWWINDOW = 0x40
+GA_ROOTOWNER = 3
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+
+
+_front_gen = 0
+_prev_fg = None   # 단축키를 누르기 전에 쓰던 창 (숨길 때 포커스를 돌려준다)
+
+
+def is_front() -> bool:
+    return peek
+
+
+def bring_front(window, on_auto_back=None):
+    """단축키: HUD 를 잠깐 맨 앞으로 띄우고 키보드 입력을 받게 한다.
+    다른 창을 누르거나(게임 실행 등) 다시 단축키를 누르면 바탕화면 층으로 돌아간다."""
+    global peek, _front_gen, _prev_fg
+    hwnd = hwnd_of(window)
+    fg = user32.GetForegroundWindow()
+    _prev_fg = fg if fg and user32.GetAncestor(fg, 2) != hwnd.value else None
+    peek = True
+    _front_gen += 1
+    user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+    user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+    user32.SetForegroundWindow(hwnd)
+    from System import Action
+    form = window.native
+
+    def focus():
+        try:
+            form.Activate()
+            form.webview.Focus()
+        except Exception as e:
+            log.debug("HUD 포커스 실패: %s", e)
+
+    form.BeginInvoke(Action(focus))
+    threading.Thread(target=_watch_front, args=(window, hwnd.value, on_auto_back, _front_gen), daemon=True, name="front").start()
+
+
+def send_back(window, restore_focus: bool = True):
+    """맨 앞에 띄운 HUD 를 다시 바탕화면 층으로. restore_focus: 단축키 전에 쓰던 창으로 포커스를 돌려준다."""
+    global peek
+    if not peek:
+        return
+    hwnd = hwnd_of(window)
+    peek = False
+    user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+    user32.SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+    if restore_focus and _prev_fg and user32.IsWindow(_prev_fg):
+        user32.SetForegroundWindow(_prev_fg)
+
+
+def _watch_front(window, me, on_auto_back, gen):
+    """맨 앞에 떠 있는 동안, HUD(또는 HUD 가 띄운 대화 상자)가 아닌 다른 창이 활성화되면 뒤로 보낸다."""
+    seen = False
+    while peek and gen == _front_gen:
+        time.sleep(0.15)
+        fg = user32.GetForegroundWindow()
+        if not fg:
+            continue
+        mine = user32.GetAncestor(fg, GA_ROOTOWNER) == me or user32.GetAncestor(fg, 2) == me
+        if mine:
+            seen = True
+        elif seen:
+            send_back(window, restore_focus=False)   # 사용자가 직접 고른 창이 있으니 그대로 둔다
+            if on_auto_back:
+                on_auto_back()
+            return
+
+
 def _proc(hwnd, msg, wparam, lparam, uid, ref):
     if msg == WM_WINDOWPOSCHANGING and not peek:
         pos = ctypes.cast(lparam, ctypes.POINTER(WINDOWPOS)).contents

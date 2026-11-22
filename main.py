@@ -46,12 +46,15 @@ _unblock_install()
 
 import webview  # noqa: E402
 
-from hud import audio, desktop, games, icons, media, players, quick, system  # noqa: E402
-from hud.chzzk import Chzzk, toast  # noqa: E402
+from hud import audio, desktop, games, icons, links, media, players, quick, system  # noqa: E402
+from hud.hotkey import Hotkey  # noqa: E402
+from hud.live import PLATFORMS, Live  # noqa: E402
+from hud.notify import toast  # noqa: E402
 from hud.mouse import MouseBattery  # noqa: E402
 from hud.launch import open_target  # noqa: E402
 
 COLLAPSED_W, PANEL_GAP = 316, 12          # 왼쪽 메뉴 열 너비, 메뉴 창과의 간격 (배율 100% 기준 CSS px)
+DEFAULT_HOTKEY = "Ctrl+Alt+H"
 DEFAULT_LAYOUT = {"monitor": 0, "side": "left", "margin_x": 24, "margin_y": 24, "scale": 1.0,
                   "panel_width": 852, "height_mode": "fit", "height": 900}
 
@@ -74,9 +77,15 @@ class Api:
             cfg["layout"] = {**DEFAULT_LAYOUT, "monitor": mon["index"],
                              "margin_x": max(0, cfg["window"]["x"] - mon["left"]), "margin_y": max(0, cfg["window"]["y"] - mon["top"])}
             save_config(cfg)
+        cfg = load_config()
+        if links.ensure_workspace(cfg):   # 이전 버전: 개발 유틸리티(dev.tools) → 작업 도구(workspace)
+            save_config(cfg)
+        self._msg_detect = links.AutoDetect(300)
         self._battery = MouseBattery()
         self._media = media.Media(players.current()["match"])
-        self._chzzk = Chzzk()
+        self._live = Live()
+        self._hotkey = None
+        self._start_hotkey()
         self._games = []
         self._games_lock = threading.Lock()
 
@@ -93,9 +102,12 @@ class Api:
             "audio": audio.default_id(),
             "hasKeyboard": bool(cfg.get("keyboard_url")),
             "kbIcon": icons.favicon_data_url(cfg.get("keyboard_url", ""), wait=2),
-            "chzzkIcon": icons.favicon_data_url("https://chzzk.naver.com/", wait=2),
+            "liveIcons": {k: icons.favicon_data_url(p["site"], wait=2) for k, p in PLATFORMS.items()},
+            "platforms": {k: p["name"] for k, p in PLATFORMS.items()},
+            "hotkey": self._hotkey.spec if self._hotkey else "",
             "player": self.player(),
             "menu": self._menu(cfg),
+            "wsTitle": cfg["workspace"].get("title") or links.DEFAULT_TITLE,
             "openPanel": _arg("panel"),
             "theme": _arg("theme", cfg.get("theme", "light")),
             "opacity": cfg.get("opacity", {}),
@@ -120,6 +132,74 @@ class Api:
     def web_links(self):
         return system.web_links()
 
+    # ---------- 고칠 수 있는 바로가기 목록 (메신저 / 웹 / 작업 도구 묶음) ----------
+    def links(self, kind):
+        if kind == "msg":
+            return system.messengers()
+        if kind == "web":
+            return system.web_links()
+        return next((g["items"] for g in self.workspace()["groups"] if f"ws:{g['id']}" == kind), [])
+
+    def links_add(self, kind, item):
+        links.add(kind, item)
+        return self.links(kind)
+
+    def links_remove(self, kind, index):
+        links.remove(kind, int(index))
+        return self.links(kind)
+
+    def links_move(self, kind, index, delta):
+        links.move(kind, int(index), int(delta))
+        return self.links(kind)
+
+    def links_rename(self, kind, index, name):
+        links.rename(kind, int(index), name)
+        return self.links(kind)
+
+    def links_detect(self, kind, force=True):
+        """자동 감지로 새로 설치된 프로그램을 더한다. 메신저 패널을 열 때는 5분에 한 번만 (force=False)."""
+        if kind == "msg" and not force and not self._msg_detect.due():
+            return []
+        return links.detect_new(kind, fresh=True)
+
+    def app_choices(self):
+        """'앱 추가' 목록: 시작 메뉴의 모든 앱."""
+        from hud import catalog, detect
+        return sorted(({"name": a["Name"], "target": catalog._target_of(a["AppID"])} for a in detect.start_apps()
+                       if a.get("Name") and a.get("AppID") and not catalog.SKIP.search(a["Name"])),
+                      key=lambda x: x["name"].lower())
+
+    def pick_app_file(self):
+        res = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=("프로그램 (*.exe;*.lnk;*.url;*.bat)", "모든 파일 (*.*)"))
+        if not res:
+            return None
+        path = res[0] if isinstance(res, (list, tuple)) else res
+        return {"name": os.path.splitext(os.path.basename(path))[0], "target": path}
+
+    # ---------- 작업 도구 (분야별 프로그램 묶음 + 작업 폴더) ----------
+    def workspace(self):
+        return system.workspace()
+
+    def ws_add_group(self, field, name=""):
+        links.ws_add_group(field, name)
+        return self.workspace()
+
+    def ws_remove_group(self, gid):
+        links.ws_remove_group(gid)
+        return self.workspace()
+
+    def ws_rename_group(self, gid, name):
+        links.ws_rename_group(gid, name)
+        return self.workspace()
+
+    def ws_move_group(self, gid, delta):
+        links.ws_move_group(gid, int(delta))
+        return self.workspace()
+
+    def ws_set(self, title=None, folder=None):
+        links.ws_set(title, folder)
+        return self.workspace()
+
     def games(self, rescan=True):
         with self._games_lock:
             if rescan or not self._games:
@@ -134,8 +214,12 @@ class Api:
             "volume": media.get_volume(),
             "quick": system.quick_state(),
             "quickButtons": quick.buttons(),
-            "live": sum(1 for s in self._chzzk.list() if s["live"]),
+            "live": self._live.live_count(),
+            "newVideos": self._live.new_video_count(),
         }
+
+    def sys_overview(self):
+        return system.overview()
 
     # ---------- 왼쪽 위 ----------
     def set_audio(self, device_id):
@@ -190,8 +274,6 @@ class Api:
     def files(self):
         return system.files()
 
-    def dev(self):
-        return system.dev_items()
 
     def recycle_info(self):
         return system.recycle_info()
@@ -207,22 +289,6 @@ class Api:
             "docker": system.toggle_docker, "empty_bin": system.empty_recycle_bin,
         }
         return acts[name]() if name in acts else None
-
-    # ---------- 웹 바로가기 ----------
-    def add_web(self, name, url):
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
-        cfg = load_config()
-        cfg["web"].append({"name": name or url, "target": url, "glyph": "E909"})
-        save_config(cfg)
-        return system.web_links()
-
-    def remove_web(self, index):
-        cfg = load_config()
-        if 0 <= index < len(cfg["web"]):
-            cfg["web"].pop(index)
-            save_config(cfg)
-        return system.web_links()
 
     # ---------- 음악 ----------
     def media(self):
@@ -244,27 +310,96 @@ class Api:
     def list_start_apps(self):
         return players.start_apps()
 
-    # ---------- 치지직 ----------
-    def chzzk_list(self):
-        return self._chzzk.list()
+    # ---------- 라이브 (치지직 · SOOP · YouTube · Twitch) ----------
+    def live_data(self):
+        return {"streamers": self._live.list(), "videos": self._live.videos(),
+                "hideShorts": load_config().get("youtube", {}).get("hide_shorts", False),
+                "hideChannels": load_config().get("youtube", {}).get("hide_channels", True)}
 
-    def chzzk_search(self, keyword):
-        return self._chzzk.search(keyword)
+    def live_search(self, platform, keyword):
+        return self._live.search(platform, keyword)
 
-    def chzzk_add(self, cid, name, image=""):
-        return self._chzzk.add(cid, name, image)
+    def live_add(self, platform, sid, name, image=""):
+        return self._live.add(platform, sid, name, image)
 
-    def chzzk_remove(self, cid):
-        return self._chzzk.remove(cid)
+    def live_remove(self, platform, sid):
+        return self._live.remove(platform, sid)
 
-    def chzzk_notify(self, cid, on):
-        return self._chzzk.set_notify(cid, on)
+    def live_notify(self, platform, sid, on):
+        return self._live.set_notify(platform, sid, on)
 
-    def chzzk_open(self, cid):
-        return open_target(f"https://chzzk.naver.com/live/{cid}")
+    def live_open(self, platform, sid):
+        return open_target(self._live.watch(platform, sid))
 
-    def chzzk_test(self):
-        return toast("Desktop HUD 알림 테스트", "스트리머가 방송을 켜면 이렇게 알려 드려요.", "https://chzzk.naver.com/", attribution="치지직")
+    def live_refresh(self):
+        self._live.refresh_now()
+        return True
+
+    def video_open(self, video_id):
+        self._live.mark_seen([video_id])
+        return open_target(f"https://www.youtube.com/watch?v={video_id}")
+
+    def video_dismiss(self, video_ids):
+        return self._live.mark_seen(list(video_ids))
+
+    def set_hide_shorts(self, on):
+        cfg = load_config()
+        cfg.setdefault("youtube", {})["hide_shorts"] = bool(on)
+        save_config(cfg)
+        return self.live_data()
+
+    def set_hide_yt_channels(self, on):
+        """라이브 '전체'에서 YouTube 채널 줄을 숨기고 새 영상 목록만 보여 줄지."""
+        cfg = load_config()
+        cfg.setdefault("youtube", {})["hide_channels"] = bool(on)
+        save_config(cfg)
+        return True
+
+    def live_test(self):
+        return toast("Desktop HUD 알림 테스트", "스트리머가 방송을 켜거나 새 영상을 올리면 이렇게 알려 드려요.",
+                     "https://chzzk.naver.com/", attribution="Desktop HUD")
+
+    # ---------- 단축키: HUD 를 맨 앞으로 ----------
+    def _start_hotkey(self):
+        self._hotkey = Hotkey(self.toggle_front)
+        spec = load_config().get("hotkey", DEFAULT_HOTKEY)
+        res = self._hotkey.set(spec)
+        if not res["ok"]:
+            log.warning("단축키 %s 등록 실패: %s", spec, res.get("error"))
+
+    def toggle_front(self):
+        if not self._pinned:
+            return
+        if desktop.is_front():
+            self.hide_front()
+            return
+        desktop.bring_front(self._window, on_auto_back=lambda: self._front_changed(False))
+        self._front_changed(True)
+
+    def hide_front(self):
+        desktop.send_back(self._window)
+        self._front_changed(False)
+        return True
+
+    def _front_changed(self, front: bool):
+        try:
+            self._window.evaluate_js(f"window.setFront && window.setFront({'true' if front else 'false'})")
+        except Exception as e:
+            log.debug("앞으로 띄움 상태 전달 실패: %s", e)
+        if front:
+            self._on_visibility(True)
+
+    def set_hotkey(self, spec):
+        res = self._hotkey.set(spec)
+        if res["ok"]:
+            cfg = load_config()
+            cfg["hotkey"] = res["spec"]
+            save_config(cfg)
+        return res
+
+    def suspend_hotkey(self, on):
+        self._hotkey.suspend(bool(on))
+        return True
 
     # ---------- 설정 ----------
     def get_settings(self):
@@ -278,7 +413,8 @@ class Api:
             "favorites": audio.favorites(),
             "keyboard_url": cfg.get("keyboard_url", ""),
             "mouse_provider": cfg.get("mouse", {}).get("provider", "auto"),
-            "projects_dir": cfg["dev"].get("projects_dir", ""),
+            "projects_dir": cfg["workspace"].get("folder", ""),
+            "ws_title": cfg["workspace"].get("title") or links.DEFAULT_TITLE,
             "quick": quick.selected(),
             "quick_choices": quick.choices(),
             "players": players.choices(),
@@ -288,6 +424,7 @@ class Api:
             "menu": self._menu(cfg),
             "layout": self._layout(),
             "monitors": [{"index": m["index"], "name": m["name"]} for m in desktop.monitors()],
+            "hotkey": self._hotkey.spec if self._hotkey else "",
         }
 
     def save_settings(self, s):
@@ -301,7 +438,7 @@ class Api:
         if "keyboard_url" in s:
             cfg["keyboard_url"] = s["keyboard_url"].strip()
         if "projects_dir" in s:
-            cfg["dev"]["projects_dir"] = s["projects_dir"].strip()
+            cfg["workspace"]["folder"] = s["projects_dir"].strip()
         if s.get("mouse_provider") in ("auto", "ghub", "logitech", "razer", "off"):
             cfg.setdefault("mouse", {})["provider"] = s["mouse_provider"]
         if isinstance(s.get("quick"), list):
@@ -473,7 +610,10 @@ def main():
     if not single_instance():
         log.info("이미 실행 중이라 종료")
         return
-    os.chdir(APP_DIR)
+    # 작업 폴더를 설치 폴더가 아닌 사용자 데이터 폴더로: HUD 가 실행한 프로그램(카카오톡 등)이
+    # 설치 폴더를 작업 폴더로 물려받아 쥐고 있으면, 업데이트할 때 폴더를 지우지 못한다
+    from hud.config import LOCAL_DIR
+    os.chdir(LOCAL_DIR)
     api = Api()
     g = api._geometry(False)
     win = webview.create_window(

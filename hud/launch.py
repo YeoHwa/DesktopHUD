@@ -20,7 +20,9 @@ def open_target(target: str, args: list | None = None, cwd: str | None = None) -
         elif args:
             subprocess.Popen([target, *args], cwd=cwd or os.path.dirname(target) or None)
         else:
-            os.startfile(target)
+            # 실행한 프로그램이 HUD 설치 폴더를 작업 폴더로 물려받지 않게 (업데이트 때 폴더를 못 지우는 문제)
+            folder = cwd or (os.path.dirname(target) if os.path.isfile(target) else "") or os.path.expanduser("~")
+            os.startfile(target, cwd=folder)
         return True
     except Exception:
         log.exception("실행 실패: %s %s", target, args)

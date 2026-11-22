@@ -23,7 +23,7 @@ from pathlib import Path
 
 APP_NAME = "Desktop HUD"
 APP_ID = "DesktopHUD"
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 HERE = Path(__file__).resolve().parent                       # app 폴더
 SRC_ROOT = HERE.parent                                       # 배포 폴더 (runtime, app 이 들어 있는 곳)
 DEST = Path(os.environ["LOCALAPPDATA"]) / "Programs" / APP_ID
@@ -109,7 +109,8 @@ def do_install(autostart=True, desktop_shortcut=True, run_after=True, report=lam
         target = DEST / sub
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
-        shutil.copytree(SRC_ROOT / sub, target)
+        # 다른 프로그램이 폴더를 작업 폴더로 쥐고 있으면 빈 폴더가 남는다 → 그 위에 그대로 복사
+        shutil.copytree(SRC_ROOT / sub, target, dirs_exist_ok=True)
     report("파일 차단 해제 중…")
     unblock_tree(DEST)
 

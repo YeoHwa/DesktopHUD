@@ -37,6 +37,24 @@ def stats():
             "ramUsed": round(vm.used / 2**30, 1), "ramTotal": round(vm.total / 2**30), "ramPct": round(vm.percent)}
 
 
+def overview():
+    """시스템 탭 위쪽 상태 카드: GPU 온도, 남은 RAM, 켜진 시간, 시스템 드라이브 사용량."""
+    temp = None
+    if _gpu is not None:
+        try:
+            temp = pynvml.nvmlDeviceGetTemperature(_gpu, 0)   # NVML_TEMPERATURE_GPU
+        except Exception:
+            pass
+    drive = os.environ.get("SystemDrive", "C:") + "\\"
+    try:
+        u = psutil.disk_usage(drive)
+        disk = {"name": drive.rstrip("\\"), "pct": round(u.percent), "free": _fmt_size(u.free)}
+    except OSError:
+        disk = None
+    return {"gpuTemp": temp, "ramFree": round(psutil.virtual_memory().available / 2**30, 1),
+            "uptime": int(time.time() - psutil.boot_time()), "disk": disk}
+
+
 # ---------------- 빠른 기능 ----------------
 def clean_ram():
     before = psutil.virtual_memory().available
@@ -57,12 +75,14 @@ def clean_ram():
 def toggle_focus():
     """집중 모드: 메신저 목록의 프로그램을 끄고, 다시 누르면 켠다."""
     on = not load_state().get("focus", False)
-    msgs = [m for m in load_config()["messengers"] if not m["target"].startswith(("http", "shell:"))]
+    # 웹 주소는 끌 수 없고, 스토어 앱(shell:) 은 프로세스 이름(proc)을 아는 것만
+    msgs = [m for m in load_config()["messengers"] if m.get("target") and not m["target"].startswith("http")
+            and (m.get("proc") or not m["target"].startswith("shell:"))]
     if on:
         names = set()
         for m in msgs:
             exe = os.path.basename(os.path.expandvars(m["target"])).lower()
-            names.add("discord.exe" if exe == "update.exe" else exe)
+            names.add(m.get("proc") or ("discord.exe" if exe == "update.exe" else exe))
         for p in psutil.process_iter(["name"]):
             if (p.info["name"] or "").lower() in names:
                 try:
@@ -223,23 +243,38 @@ def toggle_docker():
     return not running
 
 
-def dev_items():
-    cfg = load_config()["dev"]
-    root = os.path.expandvars(cfg.get("projects_dir") or "")
+def workspace():
+    """작업 도구: 분야별 프로그램 묶음 + 작업 폴더(안의 폴더 목록)."""
+    from .catalog import fields
+    from .links import DEFAULT_TITLE
+    cfg = load_config()
+    ws = cfg.get("workspace") or {}
+    root = os.path.expandvars(ws.get("folder") or "")
     projects = []
     if root and os.path.isdir(root):
         dirs = [e for e in os.scandir(root) if e.is_dir() and not e.name.startswith(".")]
         dirs.sort(key=lambda e: e.stat().st_mtime, reverse=True)
         projects = [{"name": e.name, "target": e.path} for e in dirs[:40]]
-    docker_exe = load_config()["docker"].get("desktop", "")
-    tools = []
-    for t in cfg["tools"]:
-        t = dict(t)
-        if t.get("action") == "docker":
-            t["sub"] = "실행 중" if docker_running() else "꺼짐"
-            t["iconTarget"] = docker_exe
-        tools.append(t)
-    return {"projects": projects, "tools": official_icons(tools), "projectsDir": root}
+    docker_exe = cfg["docker"].get("desktop", "")
+    groups, all_items = [], []
+    for g in ws.get("groups", []):
+        items = []
+        for t in g.get("items", []):
+            t = dict(t)
+            if t.get("action") == "docker":
+                t["sub"] = "실행 중" if docker_running() else "꺼짐"
+                t["iconTarget"] = docker_exe
+            items.append(t)
+        all_items.append(items)
+        groups.append({"id": g["id"], "name": g.get("name", ""), "field": g.get("field", "")})
+    # 모든 묶음의 아이콘을 한 번에 가져온다
+    flat = official_icons([t for items in all_items for t in items])
+    k = 0
+    for grp, items in zip(groups, all_items):
+        grp["items"] = flat[k:k + len(items)]
+        k += len(items)
+    return {"title": ws.get("title") or DEFAULT_TITLE, "folder": root, "projects": projects, "groups": groups,
+            "fields": fields(), "terminal": any(g.get("field") == "dev" for g in ws.get("groups", []))}
 
 
 def open_project(path: str, terminal=False):
