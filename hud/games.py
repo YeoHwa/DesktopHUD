@@ -1,4 +1,4 @@
-"""설치된 게임 자동 감지 (Windows '앱 제거' 목록 기반) 와 실행."""
+"""설치된 게임 자동 감지 (Windows '앱 제거' 목록, Epic, Google Play Games 바로가기) 와 실행."""
 import logging
 import os
 import re
@@ -41,6 +41,32 @@ def _shortcuts():
             for f in files:
                 if f.lower().endswith((".lnk", ".url")):
                     found.setdefault(os.path.splitext(f)[0].lower(), os.path.join(root, f))
+    return found
+
+
+PLAY_URI = re.compile(r"googleplaygames://launch/\?id=([\w.]+)[^\x00\s]*")
+PLAY_ICON = re.compile(r"[A-Za-z]:\\[^\x00]*?\.ico", re.I)
+
+
+def _play_games():
+    """Google Play Games (PC) 게임 — '앱 제거' 목록에 없고 시작 메뉴 바로가기만 있음."""
+    found = {}
+    for d in SHORTCUT_DIRS:
+        for root, _, files in os.walk(d):
+            for f in files:
+                if not f.lower().endswith(".lnk"):
+                    continue
+                path = os.path.join(root, f)
+                try:
+                    with open(path, "rb") as fp:
+                        data = fp.read(16384)
+                except OSError:
+                    continue
+                text = data.decode("utf-16-le", "ignore")
+                if not (m := PLAY_URI.search(text)):
+                    continue
+                ico = next((p for p in PLAY_ICON.findall(text) if os.path.isfile(p)), "")
+                found.setdefault(m[1], {"name": os.path.splitext(f)[0], "uri": m[0], "icon": ico or path})
     return found
 
 
@@ -124,6 +150,14 @@ def scan(cfg) -> list[dict]:
                           "launch": {"target": f"com.epicgames.launcher://apps/{m.get('AppName')}?action=launch&silent=true"},
                           "iconPath": exe}
 
+    for pkg, p in _play_games().items():
+        gid = f"gpg:{pkg}"
+        if gid in hidden:
+            continue
+        games[gid] = {"id": gid, "source": "Google Play",
+                      "name": cfg["games"].get("rename", {}).get(gid) or p["name"],
+                      "launch": {"target": p["uri"]}, "iconPath": p["icon"]}
+
     for extra in cfg["games"].get("extra", []):
         gid = f"extra:{extra['name']}"
         if gid in hidden:
@@ -132,7 +166,7 @@ def scan(cfg) -> list[dict]:
                       "launch": {"target": extra["target"], "args": extra.get("args")},
                       "iconPath": extra.get("icon", extra["target"])}
 
-    order = {"Nexon": 0, "Riot": 1, "Steam": 2, "Battle.net": 3, "Epic": 4, "기타": 5}
+    order = {"Nexon": 0, "Riot": 1, "Steam": 2, "Battle.net": 3, "Epic": 4, "Google Play": 5, "기타": 6}
     result = sorted(games.values(), key=lambda g: (order.get(g["source"], 9), g["name"]))
     for g in result:
         g["icon"] = icon_data_url(g["iconPath"])

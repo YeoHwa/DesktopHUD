@@ -132,7 +132,10 @@ def _load_file(path: str) -> Image.Image:
     else:
         img = Image.open(path)
     if getattr(img, "format", "") == "ICO" and hasattr(img, "ico"):
-        img.size = sorted(img.ico.sizes(), key=lambda s: s[0] * s[1])[-1]
+        try:
+            img.size = sorted(img.ico.sizes(), key=lambda s: s[0] * s[1])[-1]
+        except ValueError:
+            pass  # 헤더 크기와 실제 PNG 크기가 다른 ico (Google Play Games 등) — 기본 크기 그대로
     img.load()
     return img
 

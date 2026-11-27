@@ -13,7 +13,7 @@ Windows 바탕화면에 깔리는, PC방 런처 같은 HUD입니다.
 | 마우스 배터리 | Logitech(G HUB 실시간), Razer 무선 마우스(USB HID 로 직접 읽음, Synapse 불필요) |
 | 소리 출력 | 자주 쓰는 출력 장치 2개를 버튼 하나로 전환 (꺼진 장치도 자동으로 켬) |
 | 빠른 버튼 | 4칸에 원하는 기능 배치: 마이크 음소거, 화면 캡처, 화면 잠금, 화면 끄기, 절전, RAM 청소, 클립보드 기록, 집중 모드, 음소거, 배경 멈춤, 작업 관리자, 계산기, Windows 설정, 휴지통 비우기 |
-| 게임 | Steam · Riot · Nexon · Battle.net · Epic 설치 게임 자동 감지, 실제 아이콘, 직접 추가/숨기기 |
+| 게임 | Steam · Riot · Nexon · Battle.net · Epic · Google Play Games 설치 게임 자동 감지, 실제 아이콘, 직접 추가/숨기기 |
 | 라이브 | 치지직 · SOOP · YouTube · Twitch 스트리머 검색·등록, 방송 시작 시 Windows 알림 |
 | 새 YouTube 영상 | 등록한 YouTube 채널의 새 영상 목록(눌러서 바로 보기, 읽음 처리, 쇼츠 숨기기)과 새 영상 알림 |
 | 음악 | 지금 재생 중인 곡(YouTube Music 등) 표시, 이전/다음·10초 이동·재생, PC 음량 |
